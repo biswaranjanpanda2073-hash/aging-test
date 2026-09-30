@@ -1,0 +1,16 @@
+.env
+.venv/
+node_modules/
+dist/
+certs/
+data/
+__pycache__/
+.pytest_cache/
+*.log
+*.pem
+*.key
+*.crt
+*.xlsx
+.venv-*/
+audit-runtime/
+phone-setup/

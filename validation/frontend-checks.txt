@@ -1,0 +1,49 @@
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> production-aging-test@1.2.0 typecheck
+> tsc --noEmit
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> production-aging-test@1.2.0 lint
+> eslint src
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> production-aging-test@1.2.0 test
+> vitest run
+
+
+ RUN  v4.1.11 /workspace/scratch/09d72508ee26/aging-photo-validation/frontend
+
+
+ Test Files  4 passed (4)
+      Tests  75 passed (75)
+   Start at  01:07:15
+   Duration  389ms (transform 347ms, setup 0ms, import 766ms, tests 33ms, environment 0ms)
+
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> production-aging-test@1.2.0 ocr-assets
+> node scripts/copy-ocr.mjs
+
+Local OCR assets prepared. No external OCR service is used.
+npm warn Unknown env config "http-proxy". This will stop working in the next major version of npm.
+
+> production-aging-test@1.2.0 build
+> tsc --noEmit && vite build
+
+vite v6.4.3 building for production...
+transforming...
+✓ 289 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                   0.50 kB │ gzip:   0.33 kB
+dist/assets/index-UsyBypiE.css    7.22 kB │ gzip:   2.25 kB
+dist/assets/index-DyRfQjXP.js   831.24 kB │ gzip: 246.26 kB
+
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+✓ built in 2.11s

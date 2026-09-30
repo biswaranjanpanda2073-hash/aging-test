@@ -1,0 +1,3 @@
+Phone URL: https://127.0.0.1:5173 · backend 127.0.0.1:8000
+PASS: file capture attributes, real QR/OCR with operator crop, confirmation, real API save, no image upload, no live camera, mobile fit, no external HTTP requests.
+PASS: capture cancellation.

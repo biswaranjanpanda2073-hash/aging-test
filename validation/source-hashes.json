@@ -1,0 +1,18 @@
+{
+  "frontend/src/api.ts": "777581fb2ca8dd4a847497ae4dba852370f6f103b043f5a6a737a628a2a54f72",
+  "frontend/src/qr.test.ts": "8acdc48e280f641c587e23b895ee64695c880a27b4b7e66189d1766424764666",
+  "frontend/src/Scanner.tsx": "c0d7a0ba760ef378702b440efcbc71ddcda6ab894572f2b1dea5071745c97290",
+  "frontend/src/main.tsx": "d607130ce852076f813659f04bd57b5e342fc489a809dc8376a82fae7239f32c",
+  "frontend/src/style.css": "9e62bf5531d480ca9038328bef7ffaad456ce4c4ed2b544d682c761f71eb33e6",
+  "frontend/src/camera.test.ts": "515dbf51859deb2a7433259cfb155248f6fc5e592cb2146df332797117ce43f8",
+  "frontend/src/App.tsx": "b4b4a126d0ba83e9495046340f73b2be3b27899eb6f22574dee7fcacfa42a30b",
+  "frontend/src/qr.ts": "75220b68d3ef395a103557dda1e3f0c419568f0e434cd898b7502c266221977c",
+  "frontend/src/photo.test.ts": "6f64e1134f1e9e2be45a7e767bcbb54d36e882e1aa8a3b6106815b2dba375497",
+  "frontend/src/photo.ts": "541aadc0ed2d40f04fd557cef4dd402c2b28b9b3b1a391a31589d283daa4c6f5",
+  "frontend/src/greenRegion.ts": "01407d847c8f632d8019824b4cead45d0c2304596c9857beb82c7cdea191ae03",
+  "frontend/src/core.test.ts": "7eb3b1a10a60a0f2d2012ef6bf06b5f03c22f933e56648e92b666c04dade7e64",
+  "frontend/src/camera.ts": "2969564f652a1fca43543cfaf39530655a9be361c4a6021f3c8371775ef11dcf",
+  "frontend/src/types.ts": "27c0a3d28284e381be08a0924a5de93dc61a242f9bfc0ba08f6418f59485c2de",
+  "frontend/src/batteryOCR.ts": "a92ee72aa61a0473b53c11d51ef364cff592d8efd36f402168bc2eca7d4483f0",
+  "frontend/src/ocr.ts": "cdc8f30f2676eb5f0f6f7b37346a56253da0aff1175c7e29848d0901ea5709b7"
+}

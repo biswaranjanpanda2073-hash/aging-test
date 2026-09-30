@@ -1,0 +1,74 @@
+[
+  {
+    "expected": "T110R4BHK00001",
+    "decoded": {
+      "success": true,
+      "data": "T110R4BHK00001",
+      "region": "full-image",
+      "attempts": 1,
+      "processingTime": 61.10000000009313,
+      "trace": [
+        {
+          "method": "full-image",
+          "milliseconds": 54.300000000046566,
+          "decoded": true
+        }
+      ]
+    },
+    "pass": true
+  },
+  {
+    "expected": "T999R9XYZ12345",
+    "decoded": {
+      "success": true,
+      "data": "T999R9XYZ12345",
+      "region": "full-image",
+      "attempts": 1,
+      "processingTime": 35.89999999990687,
+      "trace": [
+        {
+          "method": "full-image",
+          "milliseconds": 29.79999999993015,
+          "decoded": true
+        }
+      ]
+    },
+    "pass": true
+  },
+  {
+    "expected": "https://example.org/qr-test",
+    "decoded": {
+      "success": true,
+      "data": "https://example.org/qr-test",
+      "region": "full-image",
+      "attempts": 1,
+      "processingTime": 33.09999999997672,
+      "trace": [
+        {
+          "method": "full-image",
+          "milliseconds": 27.099999999976717,
+          "decoded": true
+        }
+      ]
+    },
+    "pass": true
+  },
+  {
+    "expected": "Local QR validation 123",
+    "decoded": {
+      "success": true,
+      "data": "Local QR validation 123",
+      "region": "full-image",
+      "attempts": 1,
+      "processingTime": 28.100000000093132,
+      "trace": [
+        {
+          "method": "full-image",
+          "milliseconds": 22.5,
+          "decoded": true
+        }
+      ]
+    },
+    "pass": true
+  }
+]

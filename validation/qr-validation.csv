@@ -1,0 +1,42 @@
+Filename,Width,Height,Orientation,QR detected,Decoded value,Attempts,Method,Time ms,Result,Failure reason
+SAMPLE IMAGE/1000367765.jpg,691,1536,portrait,NO,,15,,4520,N/A,Required content absent; rejection expected (negative control).
+SAMPLE IMAGE/IMG_20260924_124404.jpg,4608,2592,landscape,YES,T130R4CIK54677,6,center-expanded,2738,PASS,
+SAMPLE IMAGE/IMG_20260924_124404_1.jpg,3088,1006,landscape,YES,T130R4CIK54677,1,full-image,195,PASS,
+SAMPLE IMAGE/IMG_20260924_124425.jpg,4608,2592,landscape,YES,T130R4CIK54677,13,ZXing-full,5740,PASS,
+SAMPLE IMAGE/IMG_20260924_124426.jpg,2780,934,landscape,YES,T130R4CIK54677,2,right-side,266,PASS,
+SAMPLE IMAGE/IMG_20260925_153119.jpg,4608,2592,landscape,NO,,15,,6440,N/A,Required content absent; rejection expected (negative control).
+SAMPLE IMAGE/IMG_20260925_153121.jpg,4608,2592,landscape,NO,,15,,9272,N/A,Required content absent; rejection expected (negative control).
+SAMPLE IMAGE/IMG_20260925_153125.jpg,4608,2592,landscape,NO,,15,,3116,N/A,Required content absent; rejection expected (negative control).
+SAMPLE IMAGE/IMG_20260925_153128.jpg,4608,2592,landscape,NO,,15,,3352,N/A,Required content absent; rejection expected (negative control).
+SAMPLE IMAGE/IMG_20260925_153132.jpg,4608,2592,landscape,NO,,15,,4409,N/A,Required content absent; rejection expected (negative control).
+SAMPLE IMAGE/IMG_20260925_153141.jpg,2592,4608,portrait,NO,,15,,6733,N/A,Required content absent; rejection expected (negative control).
+SAMPLE IMAGE/IMG_20260925_153144.jpg,2592,4608,portrait,NO,,15,,6941,N/A,Required content absent; rejection expected (negative control).
+SAMPLE IMAGE/IMG_20260925_153208.jpg,2592,4608,portrait,NO,,15,,2229,N/A,Required content absent; rejection expected (negative control).
+SAMPLE IMAGE/IMG_20260925_153212.jpg,2592,4608,portrait,NO,,15,,3189,N/A,Required content absent; rejection expected (negative control).
+SAMPLE IMAGE/IMG_20260925_153215.jpg,2592,4608,portrait,NO,,15,,2386,N/A,Required content absent; rejection expected (negative control).
+SAMPLE IMAGE/IMG_20260925_161633.jpg,4608,2592,landscape,YES,T120R4CBK23922,12,full-image-contrast,1973,PASS,
+SAMPLE IMAGE/IMG_20260925_161635.jpg,4608,2592,landscape,NO,,15,,4718,FAIL,"Decoder stage: visible QR, but all bounded jsQR/ZXing region/scale/contrast attempts yielded no payload. Exact optical cause is not proven; retake in focus with quiet zone."
+SAMPLE IMAGE/IMG_20260925_161638.jpg,4608,2592,landscape,NO,,15,,3736,FAIL,"Decoder stage: visible QR, but all bounded jsQR/ZXing region/scale/contrast attempts yielded no payload. Exact optical cause is not proven; retake in focus with quiet zone."
+SAMPLE IMAGE/IMG_20260925_161643.jpg,4608,2592,landscape,YES,T120R4CBK23922,10,tile-0.4-0.4,2662,PASS,
+SAMPLE IMAGE/IMG_20260925_161647.jpg,4608,2592,landscape,YES,T120R4CBK23922,1,full-image,381,PASS,
+SAMPLE IMAGE/IMG_20260925_161650.jpg,4608,2592,landscape,NO,,15,,5336,FAIL,"Decoder stage: visible QR, but all bounded jsQR/ZXing region/scale/contrast attempts yielded no payload. Exact optical cause is not proven; retake in focus with quiet zone."
+SAMPLE IMAGE/IMG_20260925_161653.jpg,4608,2592,landscape,NO,,15,,6066,FAIL,"Decoder stage: visible QR, but all bounded jsQR/ZXing region/scale/contrast attempts yielded no payload. Exact optical cause is not proven; retake in focus with quiet zone."
+SAMPLE IMAGE/IMG_20260925_161655.jpg,4608,2592,landscape,YES,T120R4CBK23922,13,ZXing-full,3941,PASS,
+SAMPLE IMAGE/IMG_20260925_161702.jpg,4608,2592,landscape,NO,,15,,3218,FAIL,"Decoder stage: visible QR, but all bounded jsQR/ZXing region/scale/contrast attempts yielded no payload. Exact optical cause is not proven; retake in focus with quiet zone."
+SAMPLE IMAGE/IMG_20260925_161706.jpg,4608,2592,landscape,YES,T120R4CBK23922,1,full-image,438,PASS,
+SAMPLE IMAGE/sample_photo.png,1536,516,landscape,YES,T130R4CIK54677,2,right-side,198,PASS,
+frontend/battery-crop-debug.png,768,206,landscape,NO,,15,,551,N/A,Required content absent; rejection expected (negative control).
+frontend/battery-crop-processed.png,768,206,landscape,NO,,15,,617,N/A,Required content absent; rejection expected (negative control).
+frontend/diagnostic-crop-1.png,490,154,landscape,NO,,15,,512,N/A,Required content absent; rejection expected (negative control).
+frontend/diagnostic-crop-10.png,735,231,landscape,NO,,15,,683,N/A,Required content absent; rejection expected (negative control).
+frontend/diagnostic-crop-2.png,490,154,landscape,NO,,15,,456,N/A,Required content absent; rejection expected (negative control).
+frontend/diagnostic-crop-3.png,490,154,landscape,NO,,15,,540,N/A,Required content absent; rejection expected (negative control).
+frontend/diagnostic-crop-4.png,490,154,landscape,NO,,15,,451,N/A,Required content absent; rejection expected (negative control).
+frontend/diagnostic-crop-5.png,490,154,landscape,NO,,15,,454,N/A,Required content absent; rejection expected (negative control).
+frontend/diagnostic-crop-6.png,490,154,landscape,NO,,15,,533,N/A,Required content absent; rejection expected (negative control).
+frontend/diagnostic-crop-7.png,735,231,landscape,NO,,15,,758,N/A,Required content absent; rejection expected (negative control).
+frontend/diagnostic-crop-8.png,735,231,landscape,NO,,15,,631,N/A,Required content absent; rejection expected (negative control).
+frontend/diagnostic-crop-9.png,735,231,landscape,NO,,15,,726,N/A,Required content absent; rejection expected (negative control).
+earlier-attachments/208b5324-d1f3-4dff-bf7c-e5053407dc8b.jpeg,921,2048,portrait,NO,,15,,1172,N/A,Required content absent; rejection expected (negative control).
+earlier-attachments/3f3ca86d-de39-4126-b038-aa7b2207a3e2.png,1536,516,landscape,YES,T130R4CIK54677,2,right-side,194,PASS,
+earlier-attachments/86da599e-fdd5-4861-9064-79f2c631dc21.png,1536,516,landscape,YES,T130R4CIK54677,2,right-side,187,PASS,
