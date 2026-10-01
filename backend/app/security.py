@@ -1,8 +1,10 @@
 """Small, bounded ASGI request guard for the single-laptop deployment."""
 import asyncio
-try:
+import sys
+
+if sys.version_info >= (3, 11):
     from asyncio import timeout as async_timeout_cm
-except (ImportError, AttributeError):
+else:
     from async_timeout import timeout as async_timeout_cm
 import json
 import time
@@ -50,14 +52,24 @@ class SecurityGuard:
             return await reject(429, 'Too many requests. Wait a minute and retry.')
         self.requests.append(current)
         if scope['method'] == 'POST':
-            if headers.get(b'content-type', b'').split(b';')[0].strip().lower() != b'application/json':
+            # /api/battery-ocr uses multipart/form-data (image upload).
+            # All other routes require JSON and are capped at 4 096 bytes.
+            path = scope.get('path', '')
+            is_ocr = path == '/api/battery-ocr'
+            content_type = headers.get(b'content-type', b'').split(b';')[0].strip().lower()
+            if not is_ocr and content_type != b'application/json':
                 return await reject(415, 'Only structured JSON readings are accepted.')
             try:
                 length = int(headers.get(b'content-length', b'0'))
             except ValueError:
                 return await reject(400, 'Invalid request size.')
-            if length < 0 or length > 4096:
+            max_body = 8 * 1024 * 1024 if is_ocr else 4096
+            if length < 0 or length > max_body:
                 return await reject(413, 'Request too large.')
+            # For multipart image upload: let FastAPI stream it directly.
+            if is_ocr:
+                return await self.app(scope, receive, secured_send)
+
             body = bytearray()
             try:
                 async with async_timeout_cm(10):
@@ -100,3 +112,4 @@ class SecurityGuard:
                 return await receive()
             return await self.app(scope, bounded_receive, secured_send)
         return await self.app(scope, receive, secured_send)
+

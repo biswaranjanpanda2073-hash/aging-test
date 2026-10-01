@@ -1,8 +1,9 @@
-import {useCallback,useEffect,useRef,useState} from 'react';
-import {api,submit} from './api';
-import {Scanner} from './Scanner';
-import {detectQRFromImage,parseQRSerial} from './qr';
-import type {Action,Device,Reading} from './types';
+import { useEffect, useRef, useState } from 'react';
+import { api, submit, ApiError } from './api';
+import { Scanner } from './Scanner';
+import { parseQRSerial } from './qr';
+import { detectBatteryPercentage } from './batteryOCR';
+import type { Action, Device, Reading } from './types';
 
 const modules = [
   { name: 'Device Registration', description: 'Scan QR and initial battery', number: '01' },
@@ -17,7 +18,6 @@ export default function App() {
   const [connected, setConnected] = useState(false);
   const [regex, setRegex] = useState('');
   const [device, setDevice] = useState<Device | null>(null);
-  const [scanning, setScanning] = useState<Action | null>(null);
   const [reading, setReading] = useState<Reading | null>(null);
   const [action, setAction] = useState<Action>('register');
   const [error, setError] = useState('');
@@ -27,29 +27,40 @@ export default function App() {
   // Lookup state for steps 02 & 03
   const [lookupPhase, setLookupPhase] = useState<'scan' | 'manual' | 'loading'>('scan');
   const [serial, setSerial] = useState('');
-  const lookupQRInputRef = useRef<HTMLInputElement>(null);
+  const [lookupScanningQR, setLookupScanningQR] = useState(false);
 
   // Dedicated 2-step states for Step 01 (Device Registration)
   const [regSerial, setRegSerial] = useState('');
   const [regBattery, setRegBattery] = useState<number | null>(null);
   const [regToken, setRegToken] = useState('');
   const [regScanningQR, setRegScanningQR] = useState(false);
-  const [regScanningBattery, setRegScanningBattery] = useState(false);
+  const [regBatteryProcessing, setRegBatteryProcessing] = useState(false);
+  const [regBatteryError, setRegBatteryError] = useState<string | null>(null);
   const [regRegistered, setRegRegistered] = useState<Device | null>(null);
   const [regManual, setRegManual] = useState(false);
   const [regManualInput, setRegManualInput] = useState('');
-  const regQRInputRef = useRef<HTMLInputElement>(null);
+
+  // Stage 02 (Aging Test) battery photo capture state
+  const [cpAction, setCpAction] = useState<Action>('h1');
+  const [cpBatteryProcessing, setCpBatteryProcessing] = useState(false);
+  const [cpBatteryError, setCpBatteryError] = useState<string | null>(null);
 
   // Dedicated 2-step states for Step 03 (Post Test / Packing)
   const [postSerial, setPostSerial] = useState('');
   const [postBattery, setPostBattery] = useState<number | null>(null);
   const [postToken, setPostToken] = useState('');
   const [postScanningQR, setPostScanningQR] = useState(false);
-  const [postScanningBattery, setPostScanningBattery] = useState(false);
+  const [postBatteryProcessing, setPostBatteryProcessing] = useState(false);
+  const [postBatteryError, setPostBatteryError] = useState<string | null>(null);
   const [postConfirmed, setPostConfirmed] = useState<Device | null>(null);
   const [postManual, setPostManual] = useState(false);
   const [postManualInput, setPostManualInput] = useState('');
-  const postQRInputRef = useRef<HTMLInputElement>(null);
+
+  // Hidden file input refs for rear-camera photo capture
+  const regBatteryInputRef = useRef<HTMLInputElement>(null);
+  const cpBatteryInputRef = useRef<HTMLInputElement>(null);
+  const postBatteryInputRef = useRef<HTMLInputElement>(null);
+  const ocrAbortCtrlRef = useRef<AbortController | null>(null);
 
   const [currentTime, setCurrentTime] = useState(Date.now());
   useEffect(() => {
@@ -59,43 +70,78 @@ export default function App() {
 
   useEffect(() => {
     let live = true;
+    let failCount = 0;
+    let timer: ReturnType<typeof setTimeout>;
+
     const check = async () => {
       try {
         await api('/health');
-        const config = await api<{ serial_regex: string }>('/config');
+        if (!regex) {
+          const config = await api<{ serial_regex: string }>('/config');
+          if (live) setRegex(config.serial_regex);
+        }
         if (live) {
+          failCount = 0;
           setConnected(true);
-          setRegex(config.serial_regex);
         }
       } catch {
-        if (live) setConnected(false);
+        if (live) {
+          failCount++;
+          // Only show 'Server not connected' if 2 consecutive heartbeats fail.
+          // This prevents transient Wi-Fi packet drops from flashing 'Server not connected'.
+          if (failCount >= 2) {
+            setConnected(false);
+          }
+        }
+      } finally {
+        if (live) {
+          // If in failure state, retry quickly (2.5s) to recover immediately.
+          // When healthy, ping every 6s.
+          const delay = failCount > 0 ? 2500 : 6000;
+          timer = setTimeout(() => { void check(); }, delay);
+        }
       }
     };
+
     void check();
-    const timer = setInterval(() => { void check(); }, 10000);
-    return () => { live = false; clearInterval(timer); };
-  }, []);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [regex]);
 
   // Poll active device to immediately reflect deletions or edits made directly in Excel
   useEffect(() => {
     if (!device) return;
     let live = true;
+    let timer: ReturnType<typeof setTimeout>;
+
     const verifyDevice = async () => {
       try {
         const latest = await api<Device>(`/devices/${encodeURIComponent(device.serial_number)}`);
         if (live && JSON.stringify(latest) !== JSON.stringify(device)) {
           setDevice(latest);
         }
-      } catch {
-        if (live) {
+      } catch (err) {
+        // ONLY clear device if the server explicitly confirmed it was deleted (HTTP 404).
+        // Temporary Wi-Fi packet drops (status 0 or 503) must NOT kick the operator out!
+        if (live && err instanceof ApiError && err.status === 404) {
           setDevice(null);
           setReading(null);
           setMessage(`Device ${device.serial_number} was deleted or removed from Excel.`);
         }
+      } finally {
+        if (live) {
+          timer = setTimeout(() => { void verifyDevice(); }, 6000);
+        }
       }
     };
-    const timer = setInterval(() => { void verifyDevice(); }, 3000);
-    return () => { live = false; clearInterval(timer); };
+
+    timer = setTimeout(() => { void verifyDevice(); }, 6000);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
   }, [device]);
 
   const perform = async (task: () => Promise<void>) => {
@@ -110,7 +156,18 @@ export default function App() {
     }
   };
 
+  // Cleanup in-flight OCR on unmount
+  useEffect(() => {
+    return () => {
+      ocrAbortCtrlRef.current?.abort();
+    };
+  }, []);
+
   const resetRegistration = () => {
+    if (ocrAbortCtrlRef.current) {
+      ocrAbortCtrlRef.current.abort();
+      ocrAbortCtrlRef.current = null;
+    }
     setRegSerial('');
     setRegBattery(null);
     setRegToken('');
@@ -118,12 +175,17 @@ export default function App() {
     setRegManual(false);
     setRegManualInput('');
     setRegScanningQR(false);
-    setRegScanningBattery(false);
+    setRegBatteryProcessing(false);
+    setRegBatteryError(null);
     setError('');
     setMessage('');
   };
 
   const resetPostStage = () => {
+    if (ocrAbortCtrlRef.current) {
+      ocrAbortCtrlRef.current.abort();
+      ocrAbortCtrlRef.current = null;
+    }
     setPostSerial('');
     setPostBattery(null);
     setPostToken('');
@@ -131,15 +193,35 @@ export default function App() {
     setPostManual(false);
     setPostManualInput('');
     setPostScanningQR(false);
-    setPostScanningBattery(false);
+    setPostBatteryProcessing(false);
+    setPostBatteryError(null);
+    setError('');
+    setMessage('');
+  };
+
+  const resetStage2Device = () => {
+    if (ocrAbortCtrlRef.current) {
+      ocrAbortCtrlRef.current.abort();
+      ocrAbortCtrlRef.current = null;
+    }
+    setDevice(null);
+    setReading(null);
+    setCpBatteryProcessing(false);
+    setCpBatteryError(null);
+    setLookupScanningQR(false);
+    setSerial('');
+    setLookupPhase('scan');
     setError('');
     setMessage('');
   };
 
   const navigate = (index: number | null) => {
     if (busy) return;
+    if (ocrAbortCtrlRef.current) {
+      ocrAbortCtrlRef.current.abort();
+      ocrAbortCtrlRef.current = null;
+    }
     setPage(index);
-    setScanning(null);
     setReading(null);
     setError('');
     setMessage('');
@@ -147,38 +229,159 @@ export default function App() {
     setLookupPhase('scan');
     resetRegistration();
     resetPostStage();
+    setCpBatteryProcessing(false);
+    setCpBatteryError(null);
   };
 
-  // Step 01: Handle QR photo scan
-  const onScanRegQR = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
+  // Synchronous triggers to preserve browser user activation
+  const triggerRegBatteryScan = () => {
+    setRegBatteryError(null);
     setError('');
-    setRegScanningQR(true);
-    try {
-      const result = await detectQRFromImage(file);
-      if (!result.success || result.data === undefined) {
-        throw new Error(result.error || 'QR not found. Please ensure the QR code is clearly visible and retry.');
-      }
-      const found = parseQRSerial(result.data, regex);
-      setRegSerial(found);
-      setRegManual(false);
-      setMessage('');
-    } catch (ex) {
-      setError(ex instanceof Error ? ex.message : 'QR scan failed.');
-    } finally {
-      setRegScanningQR(false);
+    setMessage('');
+    if (regBatteryInputRef.current) {
+      regBatteryInputRef.current.value = '';
+      regBatteryInputRef.current.click();
     }
   };
 
-  // Step 01: Handle Battery scan completion from Scanner modal
-  const onRegBatteryReceived = useCallback((result: Reading) => {
-    setRegBattery(result.battery_percent);
-    setRegToken(result.capture_token);
-    setRegScanningBattery(false);
+  const triggerCpBatteryScan = (targetAction: Action) => {
+    setCpAction(targetAction);
+    setCpBatteryError(null);
+    setError('');
     setMessage('');
-  }, []);
+    if (cpBatteryInputRef.current) {
+      cpBatteryInputRef.current.value = '';
+      cpBatteryInputRef.current.click();
+    }
+  };
+
+  const triggerPostBatteryScan = () => {
+    setPostBatteryError(null);
+    setError('');
+    setMessage('');
+    if (postBatteryInputRef.current) {
+      postBatteryInputRef.current.value = '';
+      postBatteryInputRef.current.click();
+    }
+  };
+
+  // Automatic OCR handler triggered immediately upon photo selection
+  const handleBatteryPhotoSelect = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    stage: 'reg' | 'cp' | 'post',
+    batteryAction: Action,
+    targetSerial?: string
+  ) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) {
+      // User cancelled camera; return without changing any data
+      return;
+    }
+
+    // Cancel obsolete OCR requests
+    if (ocrAbortCtrlRef.current) {
+      ocrAbortCtrlRef.current.abort();
+    }
+    const ctrl = new AbortController();
+    ocrAbortCtrlRef.current = ctrl;
+
+    if (stage === 'reg') {
+      setRegBatteryProcessing(true);
+      setRegBatteryError(null);
+    } else if (stage === 'cp') {
+      setCpBatteryProcessing(true);
+      setCpBatteryError(null);
+    } else if (stage === 'post') {
+      setPostBatteryProcessing(true);
+      setPostBatteryError(null);
+    }
+    setError('');
+    setMessage('');
+
+    try {
+      const ocrPromise = detectBatteryPercentage(file, undefined, undefined, ctrl.signal);
+      const tokenPromise = api<{ capture_token: string }>(
+        '/captures',
+        { action: batteryAction, serial_number: targetSerial || undefined },
+        ctrl.signal
+      );
+
+      const [ocrResult, captureData] = await Promise.all([ocrPromise, tokenPromise]);
+
+      if (ctrl.signal.aborted) {
+        return; // Ignore late/obsolete result
+      }
+
+      if (!ocrResult.success || ocrResult.batteryPercent === undefined) {
+        const errMsg = ocrResult.error || 'Could not detect battery percentage. Please retake photo.';
+        if (stage === 'reg') {
+          setRegBattery(null);
+          setRegBatteryError(errMsg);
+        } else if (stage === 'cp') {
+          setCpBatteryError(errMsg);
+        } else if (stage === 'post') {
+          setPostBattery(null);
+          setPostBatteryError(errMsg);
+        }
+        return;
+      }
+
+      const pct = ocrResult.batteryPercent;
+      if (!Number.isInteger(pct) || pct < 0 || pct > 100) {
+        const errMsg = `Invalid percentage detected (${pct}%). Must be 0–100%.`;
+        if (stage === 'reg') {
+          setRegBattery(null);
+          setRegBatteryError(errMsg);
+        } else if (stage === 'cp') {
+          setCpBatteryError(errMsg);
+        } else if (stage === 'post') {
+          setPostBattery(null);
+          setPostBatteryError(errMsg);
+        }
+        return;
+      }
+
+      const token = captureData.capture_token;
+
+      if (stage === 'reg') {
+        setRegBattery(pct);
+        setRegToken(token);
+        setRegBatteryError(null);
+      } else if (stage === 'cp') {
+        setReading({
+          serial_number: targetSerial || device?.serial_number || '',
+          battery_percent: pct,
+          device_timestamp: null,
+          capture_token: token
+        });
+        setAction(batteryAction);
+        setCpBatteryError(null);
+      } else if (stage === 'post') {
+        setPostBattery(pct);
+        setPostToken(token);
+        setPostBatteryError(null);
+      }
+    } catch (err) {
+      if (ctrl.signal.aborted) return;
+      const errMsg = err instanceof Error ? err.message : 'Battery scanning failed. Please retake photo.';
+      if (stage === 'reg') {
+        setRegBattery(null);
+        setRegBatteryError(errMsg);
+      } else if (stage === 'cp') {
+        setCpBatteryError(errMsg);
+      } else if (stage === 'post') {
+        setPostBattery(null);
+        setPostBatteryError(errMsg);
+      }
+    } finally {
+      if (!ctrl.signal.aborted) {
+        if (stage === 'reg') setRegBatteryProcessing(false);
+        else if (stage === 'cp') setCpBatteryProcessing(false);
+        else if (stage === 'post') setPostBatteryProcessing(false);
+      }
+    }
+  };
 
   // Step 01: Confirm & Register in Excel
   const confirmRegistration = () => perform(async () => {
@@ -193,37 +396,6 @@ export default function App() {
     setRegRegistered(next);
     setMessage('Device registered successfully in Excel.');
   });
-
-  // Step 03: Handle QR photo scan for packing
-  const onScanPostQR = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    setError('');
-    setPostScanningQR(true);
-    try {
-      const result = await detectQRFromImage(file);
-      if (!result.success || result.data === undefined) {
-        throw new Error(result.error || 'QR not found. Please ensure the QR code is clearly visible and retry.');
-      }
-      const found = parseQRSerial(result.data, regex);
-      setPostSerial(found);
-      setPostManual(false);
-      setMessage('');
-    } catch (ex) {
-      setError(ex instanceof Error ? ex.message : 'QR scan failed.');
-    } finally {
-      setPostScanningQR(false);
-    }
-  };
-
-  // Step 03: Handle Battery scan completion for packing
-  const onPostBatteryReceived = useCallback((result: Reading) => {
-    setPostBattery(result.battery_percent);
-    setPostToken(result.capture_token);
-    setPostScanningBattery(false);
-    setMessage('');
-  }, []);
 
   // Step 03: Confirm & Save Post-Aging Packing in Excel
   const confirmPostAging = () => perform(async () => {
@@ -248,38 +420,6 @@ export default function App() {
     setLookupPhase('scan');
   });
 
-  const scanLookupQR = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    setError('');
-    setLookupPhase('loading');
-    try {
-      const result = await detectQRFromImage(file);
-      if (!result.success || result.data === undefined) {
-        throw new Error(result.error || 'QR not found. Try again or enter serial manually.');
-      }
-      const found = parseQRSerial(result.data, regex);
-      await findBySerial(found);
-    } catch (ex) {
-      setError(ex instanceof Error ? ex.message : 'QR scan failed.');
-      setLookupPhase('scan');
-    }
-  };
-
-  const openCheckpointScan = (next: Action) => {
-    setAction(next);
-    setReading(null);
-    setError('');
-    setMessage('');
-    setScanning(next);
-  };
-
-  const onCheckpointReceived = useCallback((result: Reading) => {
-    setReading(result);
-    setScanning(null);
-  }, []);
-
   const formatRemaining = (ms: number) => {
     if (ms <= 0) return '0s';
     const totalSec = Math.ceil(ms / 1000);
@@ -289,23 +429,12 @@ export default function App() {
     return `${sec}s`;
   };
 
-  const resetStage2Device = () => {
-    setDevice(null);
-    setReading(null);
-    setScanning(null);
-    setSerial('');
-    setLookupPhase('scan');
-    setError('');
-    setMessage('');
-  };
-
   const handleStage2NavClick = (targetStep: 'qr' | 1 | 2 | 3 | 4) => {
     setError('');
     setMessage('');
     if (targetStep === 'qr') {
-      setScanning(null);
       setReading(null);
-      lookupQRInputRef.current?.click();
+      setLookupScanningQR(true);
       return;
     }
     if (!device) {
@@ -332,7 +461,7 @@ export default function App() {
       setError(`H${n} is not due yet. Remaining time: ${formatRemaining(remMs)}.`);
       return;
     }
-    openCheckpointScan(`h${n}` as Action);
+    triggerCpBatteryScan(`h${n}` as Action);
   };
 
   const confirmCheckpoint = () => perform(async () => {
@@ -381,6 +510,32 @@ export default function App() {
       </header>
 
       <main>
+        {/* Hidden file inputs for rear-camera photo capture of battery percentages */}
+        <input
+          ref={regBatteryInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          style={{ display: 'none' }}
+          onChange={(e) => void handleBatteryPhotoSelect(e, 'reg', 'register')}
+        />
+        <input
+          ref={cpBatteryInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          style={{ display: 'none' }}
+          onChange={(e) => void handleBatteryPhotoSelect(e, 'cp', cpAction, device?.serial_number)}
+        />
+        <input
+          ref={postBatteryInputRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          style={{ display: 'none' }}
+          onChange={(e) => void handleBatteryPhotoSelect(e, 'post', 'post-aging', postSerial)}
+        />
+
         <div className="title-row">
           <div>
             <p className="eyebrow">DEVICE QUALITY CONTROL</p>
@@ -465,25 +620,18 @@ export default function App() {
                     <p>Follow the 2-step scanning process: first scan the device serial QR, then scan the battery percentage.</p>
                   </div>
 
-                  {/* Hidden QR photo file input */}
-                  <input
-                    ref={regQRInputRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    hidden
-                    onChange={(e) => void onScanRegQR(e)}
-                  />
-
-                  {/* Modal for battery scan if open */}
-                  {regScanningBattery ? (
+                  {/* Modal for live QR scan */}
+                  {regScanningQR ? (
                     <Scanner
-                      action="register"
-                      target={regSerial}
+                      mode="qr"
                       regex={regex}
-                      mode="battery-only"
-                      onResult={onRegBatteryReceived}
-                      onCancel={() => setRegScanningBattery(false)}
+                      onSerial={(found) => {
+                        setRegSerial(found);
+                        setRegManual(false);
+                        setRegScanningQR(false);
+                        setMessage('');
+                      }}
+                      onCancel={() => setRegScanningQR(false)}
                     />
                   ) : regRegistered ? (
                     /* Success screen after device is saved in Excel */
@@ -533,16 +681,14 @@ export default function App() {
                           </span>
                         </div>
 
-                        <h3 style={{ margin: '6px 0 8px' }}>1. Serial Num QR Scan</h3>
+                        <h3 style={{ margin: '6px 0 8px' }}>1. Serial Number Scanner</h3>
                         <p style={{ margin: '0 0 14px' }}>
-                          Point the camera at the device QR code label to detect the serial number.
+                          Open the rear camera to detect the QR code or barcode.
                         </p>
 
                         {!regSerial ? (
                           <>
-                            {regScanningQR ? (
-                              <p className="scan-status" role="status">Decoding QR photo…</p>
-                            ) : regManual ? (
+                            {regManual ? (
                               <form
                                 className="lookup"
                                 style={{ marginTop: 10 }}
@@ -577,7 +723,7 @@ export default function App() {
                                   style={{ marginTop: 8 }}
                                   onClick={() => setRegManual(false)}
                                 >
-                                  ← Back to camera QR scan
+                                  ← Back to live camera scanner
                                 </button>
                               </form>
                             ) : (
@@ -586,9 +732,12 @@ export default function App() {
                                   type="button"
                                   className="scan-btn-primary"
                                   disabled={busy || !connected}
-                                  onClick={() => regQRInputRef.current?.click()}
+                                  onClick={() => {
+                                    setError('');
+                                    setRegScanningQR(true);
+                                  }}
                                 >
-                                  ▣ Serial Num QR Scan
+                                  ▣ Serial Num Scanner
                                 </button>
                                 <button
                                   type="button"
@@ -616,9 +765,10 @@ export default function App() {
                                 setRegSerial('');
                                 setRegBattery(null);
                                 setError('');
+                                setRegScanningQR(true);
                               }}
                             >
-                              Rescan QR
+                              Rescan Serial
                             </button>
                           </div>
                         )}
@@ -641,15 +791,29 @@ export default function App() {
                           <p style={{ color: '#748270', fontStyle: 'italic', margin: '10px 0' }}>
                             Scan the Serial QR code in Step 1 first to enable battery scanning.
                           </p>
+                        ) : regBatteryProcessing ? (
+                          <div className="battery-processing-card">
+                            <div className="battery-spinner" />
+                            <strong>Reading battery percentage…</strong>
+                            <p style={{ margin: '6px 0 0', fontSize: 13, color: '#3f674f' }}>Processing captured photo</p>
+                          </div>
+                        ) : regBatteryError ? (
+                          <div className="battery-error-card">
+                            <p>⚠ {regBatteryError}</p>
+                            <button
+                              type="button"
+                              className="btn-retake"
+                              onClick={triggerRegBatteryScan}
+                            >
+                              📷 Retake Photo
+                            </button>
+                          </div>
                         ) : regBattery === null ? (
                           <button
                             type="button"
                             className="scan-btn-primary"
                             disabled={busy || !connected}
-                            onClick={() => {
-                              setError('');
-                              setRegScanningBattery(true);
-                            }}
+                            onClick={triggerRegBatteryScan}
                           >
                             ⚡ Battery Scan
                           </button>
@@ -664,11 +828,7 @@ export default function App() {
                               type="button"
                               className="secondary"
                               style={{ minHeight: 38, padding: '8px 14px', fontSize: 13 }}
-                              onClick={() => {
-                                setRegBattery(null);
-                                setError('');
-                                setRegScanningBattery(true);
-                              }}
+                              onClick={triggerRegBatteryScan}
                             >
                               Rescan Battery
                             </button>
@@ -731,28 +891,20 @@ export default function App() {
                     <p>5-Button Workflow: Scan device serial QR, record H1–H4 checkpoints, and confirm to Excel.</p>
                   </div>
 
-                  {/* Hidden QR file input for device lookup */}
-                  <input
-                    ref={lookupQRInputRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    hidden
-                    onChange={(e) => void scanLookupQR(e)}
-                  />
+                    {/* Hidden QR file input removed in favor of live camera scanning */}
 
                   {/* 5-Button Control Bar */}
                   <div className="stage2-nav-bar">
-                    {/* Button 1: QR Scan for Serial */}
+                    {/* Button 1: Live Scanner for Serial */}
                     <button
                       type="button"
                       className="stage2-nav-btn btn-qr"
                       disabled={busy}
                       onClick={() => handleStage2NavClick('qr')}
                     >
-                      <span className="btn-title">▣ Scan Serial QR</span>
+                      <span className="btn-title">▣ Scanner</span>
                       <span className="btn-subtext">
-                        {device ? device.serial_number : 'Detect device'}
+                        {device ? device.serial_number : 'Scan device'}
                       </span>
                     </button>
 
@@ -797,16 +949,48 @@ export default function App() {
                     })}
                   </div>
 
-                  {/* Scanner modal for checkpoint reading */}
-                  {scanning ? (
+                  {/* Scanner modal for device lookup */}
+                  {lookupScanningQR ? (
                     <Scanner
-                      action={scanning}
-                      target={device?.serial_number}
+                      mode="qr"
                       regex={regex}
-                      mode="battery-only"
-                      onResult={onCheckpointReceived}
-                      onCancel={() => setScanning(null)}
+                      onSerial={(found) => {
+                        void findBySerial(found);
+                        setLookupScanningQR(false);
+                      }}
+                      onCancel={() => setLookupScanningQR(false)}
                     />
+                  ) : cpBatteryProcessing ? (
+                    <div className="battery-processing-card" style={{ maxWidth: 480, margin: '20px auto' }}>
+                      <div className="battery-spinner" />
+                      <strong>Reading battery percentage…</strong>
+                      <p style={{ margin: '6px 0 0', fontSize: 13, color: '#3f674f' }}>
+                        Processing captured photo for {cpAction.toUpperCase()} checkpoint
+                      </p>
+                    </div>
+                  ) : cpBatteryError ? (
+                    <div className="battery-error-card" style={{ maxWidth: 480, margin: '20px auto' }}>
+                      <p>⚠ {cpBatteryError}</p>
+                      <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+                        <button
+                          type="button"
+                          className="btn-retake"
+                          onClick={() => {
+                            setCpBatteryError(null);
+                            triggerCpBatteryScan(cpAction);
+                          }}
+                        >
+                          📷 Retake Photo
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary"
+                          onClick={() => setCpBatteryError(null)}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
                   ) : reading ? (
                     /* Review screen before confirming and saving to Excel */
                     <div className="review">
@@ -868,9 +1052,9 @@ export default function App() {
                           type="button"
                           className="secondary"
                           disabled={busy}
-                          onClick={() => openCheckpointScan(action)}
+                          onClick={() => triggerCpBatteryScan(action)}
                         >
-                          ↺ Retry Capture
+                          ↺ Rescan Battery
                         </button>
                         <button
                           type="button"
@@ -888,18 +1072,21 @@ export default function App() {
                       {/* Step A: No device selected yet */}
                       {!device ? (
                         <div>
-                          {lookupPhase === 'loading' && <p role="status" className="scan-status">Decoding QR code…</p>}
+                          {lookupPhase === 'loading' && <p role="status" className="scan-status">Decoding device code…</p>}
                           {lookupPhase === 'scan' && (
                             <div className="scan-start">
                               <div className="scan-icon" aria-hidden="true">▣</div>
-                              <h3>Scan Device Serial QR Code</h3>
-                              <p>Point the camera at the device QR label to load its record and checkpoints.</p>
+                              <h3>Scan Device Serial Code</h3>
+                              <p>Open the live camera scanner to detect the device QR code or barcode.</p>
                               <button
                                 type="button"
                                 disabled={busy || !connected || !regex}
-                                onClick={() => lookupQRInputRef.current?.click()}
+                                onClick={() => {
+                                  setError('');
+                                  setLookupScanningQR(true);
+                                }}
                               >
-                                ▣ Scan QR to Find Device
+                                ▣ Scanner to Find Device
                               </button>
                               <button
                                 type="button"
@@ -941,7 +1128,7 @@ export default function App() {
                                 style={{ marginTop: 8 }}
                                 onClick={() => { setLookupPhase('scan'); setError(''); }}
                               >
-                                ← Back to QR camera scan
+                                ← Back to live camera scanner
                               </button>
                             </form>
                           )}
@@ -1010,7 +1197,8 @@ export default function App() {
                                     setPostConfirmed(null);
                                     setPostManual(false);
                                     setPostScanningQR(false);
-                                    setPostScanningBattery(false);
+                                    setPostBatteryProcessing(false);
+                                    setPostBatteryError(null);
                                     setError('');
                                     setMessage('');
                                     setPage(2);
@@ -1105,7 +1293,7 @@ export default function App() {
                                       type="button"
                                       className="stage2-cp-btn"
                                       disabled={!isDue || busy || !connected}
-                                      onClick={() => openCheckpointScan(`h${n}` as Action)}
+                                      onClick={() => triggerCpBatteryScan(`h${n}` as Action)}
                                     >
                                       {isDue ? `⚡ Scan H${n} Battery` : `⏳ Due in ${formatRemaining(remMs)}`}
                                     </button>
@@ -1123,7 +1311,8 @@ export default function App() {
                                         setPostConfirmed(null);
                                         setPostManual(false);
                                         setPostScanningQR(false);
-                                        setPostScanningBattery(false);
+                                        setPostBatteryProcessing(false);
+                                        setPostBatteryError(null);
                                         setError('');
                                         setMessage('');
                                         setPage(2);
@@ -1154,25 +1343,18 @@ export default function App() {
                     <p>Scan device QR and capture post-aging battery reading (70–100%) to mark it Packing Ready in Excel.</p>
                   </div>
 
-                  {/* Hidden QR file input for camera scan */}
-                  <input
-                    ref={postQRInputRef}
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    hidden
-                    onChange={(e) => void onScanPostQR(e)}
-                  />
-
-                  {/* Scanner modal for Step 2 battery */}
-                  {postScanningBattery ? (
+                  {/* Modal for live QR scan */}
+                  {postScanningQR ? (
                     <Scanner
-                      action="post-aging"
-                      target={postSerial}
+                      mode="qr"
                       regex={regex}
-                      mode="battery-only"
-                      onResult={onPostBatteryReceived}
-                      onCancel={() => setPostScanningBattery(false)}
+                      onSerial={(found) => {
+                        setPostSerial(found);
+                        setPostManual(false);
+                        setPostScanningQR(false);
+                        setMessage('');
+                      }}
+                      onCancel={() => setPostScanningQR(false)}
                     />
                   ) : postConfirmed ? (
                     /* Success Confirmation State */
@@ -1212,16 +1394,14 @@ export default function App() {
                           </span>
                         </div>
 
-                        <h3 style={{ margin: '6px 0 8px' }}>1. Serial Num QR Scan</h3>
+                        <h3 style={{ margin: '6px 0 8px' }}>1. Serial Number Scanner</h3>
                         <p style={{ margin: '0 0 14px' }}>
-                          Point the camera at the device QR code label to detect the serial number.
+                          Open the rear camera to detect the QR code or barcode.
                         </p>
 
                         {!postSerial ? (
                           <>
-                            {postScanningQR ? (
-                              <p className="scan-status" role="status">Decoding QR photo…</p>
-                            ) : postManual ? (
+                            {postManual ? (
                               <form
                                 className="lookup"
                                 style={{ marginTop: 10 }}
@@ -1256,7 +1436,7 @@ export default function App() {
                                   style={{ marginTop: 8 }}
                                   onClick={() => setPostManual(false)}
                                 >
-                                  ← Back to camera QR scan
+                                  ← Back to live camera scanner
                                 </button>
                               </form>
                             ) : (
@@ -1265,9 +1445,12 @@ export default function App() {
                                   type="button"
                                   className="scan-btn-primary"
                                   disabled={busy || !connected}
-                                  onClick={() => postQRInputRef.current?.click()}
+                                  onClick={() => {
+                                    setError('');
+                                    setPostScanningQR(true);
+                                  }}
                                 >
-                                  ▣ Serial Num QR Scan
+                                  ▣ Serial Num Scanner
                                 </button>
                                 <button
                                   type="button"
@@ -1295,9 +1478,10 @@ export default function App() {
                                 setPostSerial('');
                                 setPostBattery(null);
                                 setError('');
+                                setPostScanningQR(true);
                               }}
                             >
-                              Rescan QR
+                              Rescan Serial
                             </button>
                           </div>
                         )}
@@ -1313,22 +1497,36 @@ export default function App() {
 
                         <h3 style={{ margin: '6px 0 8px' }}>2. Battery Scan (Packing)</h3>
                         <p style={{ margin: '0 0 14px' }}>
-                          Capture a close-up showing the post-aging battery level (must be 70–100%).
+                          Position the device’s battery percentage inside the guide (must be 70–100%).
                         </p>
 
                         {!postSerial ? (
                           <p style={{ color: '#748270', fontStyle: 'italic', margin: '10px 0' }}>
                             Scan the Serial QR code in Step 1 first to enable battery scanning.
                           </p>
+                        ) : postBatteryProcessing ? (
+                          <div className="battery-processing-card">
+                            <div className="battery-spinner" />
+                            <strong>Reading battery percentage…</strong>
+                            <p style={{ margin: '6px 0 0', fontSize: 13, color: '#3f674f' }}>Processing captured photo</p>
+                          </div>
+                        ) : postBatteryError ? (
+                          <div className="battery-error-card">
+                            <p>⚠ {postBatteryError}</p>
+                            <button
+                              type="button"
+                              className="btn-retake"
+                              onClick={triggerPostBatteryScan}
+                            >
+                              📷 Retake Photo
+                            </button>
+                          </div>
                         ) : postBattery === null ? (
                           <button
                             type="button"
                             className="scan-btn-primary"
                             disabled={busy || !connected}
-                            onClick={() => {
-                              setError('');
-                              setPostScanningBattery(true);
-                            }}
+                            onClick={triggerPostBatteryScan}
                           >
                             ⚡ Battery Scan (Packing)
                           </button>
@@ -1343,11 +1541,7 @@ export default function App() {
                               type="button"
                               className="secondary"
                               style={{ minHeight: 38, padding: '8px 14px', fontSize: 13 }}
-                              onClick={() => {
-                                setPostBattery(null);
-                                setError('');
-                                setPostScanningBattery(true);
-                              }}
+                              onClick={triggerPostBatteryScan}
                             >
                               Rescan Battery
                             </button>

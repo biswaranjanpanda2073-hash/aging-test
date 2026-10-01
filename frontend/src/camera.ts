@@ -92,3 +92,97 @@ export class CaptureGate {
     return Math.max(0,3-Math.floor((time-this.since)/1000));
   }
 }
+
+export interface NormalizedRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * Extracts a normalized rectangular crop from a playing video onto an in-memory canvas.
+ * Clamps coordinates to valid video dimensions and optionally downscales to bounded size.
+ */
+export function cropVideoFrame(
+  video: HTMLVideoElement,
+  guideRect: NormalizedRect,
+  maxDimension = 640
+): HTMLCanvasElement {
+  const vw = video.videoWidth || 640;
+  const vh = video.videoHeight || 480;
+  const sx = Math.max(0, Math.min(vw - 1, Math.floor(guideRect.x * vw)));
+  const sy = Math.max(0, Math.min(vh - 1, Math.floor(guideRect.y * vh)));
+  const sw = Math.max(1, Math.min(vw - sx, Math.ceil(guideRect.width * vw)));
+  const sh = Math.max(1, Math.min(vh - sy, Math.ceil(guideRect.height * vh)));
+
+  let dw = sw;
+  let dh = sh;
+  if (Math.max(dw, dh) > maxDimension) {
+    const scale = maxDimension / Math.max(dw, dh);
+    dw = Math.max(1, Math.round(dw * scale));
+    dh = Math.max(1, Math.round(dh * scale));
+  }
+
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, dw);
+  canvas.height = Math.max(1, dh);
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (ctx) {
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+  }
+  return canvas;
+}
+
+/**
+ * Evaluates frame quality estimates (motion, brightness, glare) on a cropped canvas.
+ * Note: These are software heuristics, not confirmed hardware focus.
+ */
+export function assessCropQuality(
+  canvas: HTMLCanvasElement,
+  previousPixels?: Uint8ClampedArray
+): {
+  guidance: string | null;
+  pixels: Uint8ClampedArray;
+  motion: number;
+  brightness: number;
+} {
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (!ctx) {
+    return { guidance: null, pixels: new Uint8ClampedArray(0), motion: 0, brightness: 128 };
+  }
+  const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  const data = imgData.data;
+  let totalBrightness = 0;
+  let motion = 0;
+  let clippedHigh = 0;
+  const pixelCount = Math.max(1, data.length / 4);
+
+  for (let i = 0; i < data.length; i += 4) {
+    const r = data[i];
+    const g = data[i + 1];
+    const b = data[i + 2];
+    const luma = (r * 299 + g * 587 + b * 114) / 1000;
+    totalBrightness += luma;
+    if (luma > 248) clippedHigh++;
+    if (previousPixels && previousPixels.length === data.length) {
+      motion += Math.abs(r - previousPixels[i]) + Math.abs(g - previousPixels[i + 1]) + Math.abs(b - previousPixels[i + 2]);
+    }
+  }
+
+  const avgBrightness = totalBrightness / pixelCount;
+  const avgMotion = previousPixels ? motion / (pixelCount * 3) : 0;
+  const glareRatio = clippedHigh / pixelCount;
+
+  let guidance: string | null = null;
+  if (previousPixels && avgMotion > 20) {
+    guidance = 'Hold steady';
+  } else if (glareRatio > 0.40) {
+    guidance = 'Reduce glare (tilt phone slightly)';
+  } else if (avgBrightness < 35) {
+    guidance = 'Move closer or increase lighting';
+  }
+
+  return { guidance, pixels: data, motion: avgMotion, brightness: avgBrightness };
+}
+

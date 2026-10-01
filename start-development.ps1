@@ -1,11 +1,17 @@
 $ErrorActionPreference = 'Stop'
 $ProjectRoot = $PSScriptRoot
 foreach ($Port in @(5173,8000)) {
-  if (Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue) { throw "Port $Port is busy. Close its existing service; this application will not change ports." }
+  $Conns = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
+  if ($Conns) {
+    foreach ($Conn in $Conns) {
+      Write-Host "Port $Port was in use by PID $($Conn.OwningProcess). Stopping existing process..."
+      Stop-Process -Id $Conn.OwningProcess -Force -ErrorAction SilentlyContinue
+    }
+    Start-Sleep -Milliseconds 600
+  }
 }
 if (-not (Test-Path "$ProjectRoot/certs/lan.pem")) { throw 'Run scripts/setup-https.ps1 -LanIP <your-IP> first.' }
 if (-not (Test-Path "$ProjectRoot/backend/.venv/Scripts/python.exe")) { throw 'Install backend dependencies first; see README.md.' }
-if (-not (Test-Path "$ProjectRoot/frontend/public/ocr/eng.traineddata.gz")) { throw 'Run npm run ocr-assets in frontend first.' }
 Push-Location "$ProjectRoot/frontend"
 try {
   npm run check:setup

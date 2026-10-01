@@ -7,7 +7,7 @@ if (-not (Get-Command mkcert -ErrorAction SilentlyContinue)) { throw 'Install mk
 New-Item -ItemType Directory -Force "$ProjectRoot/certs" | Out-Null
 mkcert -install
 if ($LASTEXITCODE -ne 0) { throw 'Local CA installation failed.' }
-mkcert -key-file "$ProjectRoot/certs/lan-key.pem" -cert-file "$ProjectRoot/certs/lan.pem" localhost 127.0.0.1 $LanIP
+mkcert -key-file "$ProjectRoot/certs/lan-key.pem" -cert-file "$ProjectRoot/certs/lan.pem" localhost 127.0.0.1 $LanIP 192.168.137.1
 if ($LASTEXITCODE -ne 0) { throw 'Certificate generation failed.' }
 $ExistingLines = @()
 if (Test-Path "$ProjectRoot/frontend/.env") { $ExistingLines = @(Get-Content "$ProjectRoot/frontend/.env" | Where-Object { $_ -notmatch '^(LAN_IP|TLS_CERT|TLS_KEY)=' }) }

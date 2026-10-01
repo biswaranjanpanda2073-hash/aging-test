@@ -1,5 +1,5 @@
 import jsQR from 'jsqr';
-import {QRCodeReader,RGBLuminanceSource,HybridBinarizer,BinaryBitmap,DecodeHintType} from '@zxing/library';
+import {QRCodeReader,RGBLuminanceSource,HybridBinarizer,BinaryBitmap,DecodeHintType,BarcodeFormat,MultiFormatReader} from '@zxing/library';
 import {loadPhoto,cropPhoto,clear,type Photo,type Rect} from './photo';
 export function parseQRSerial(payload:string,regex:string):string {
   if(payload.length>1024)throw new Error('QR payload is too large.');
@@ -55,3 +55,98 @@ export async function detectQRFromImage(input:Photo):Promise<QRResult>{
 }
 // Kept for legacy reference tests; the application calls the asynchronous photo decoder.
 export function readQR(source:HTMLCanvasElement,regex:string){const p=source.getContext('2d')!.getImageData(0,0,source.width,source.height);try{const qr=jsQR(p.data,p.width,p.height,{inversionAttempts:'attemptBoth'});if(!qr)throw new Error('QR not detected');return parseQRSerial(qr.data,regex);}finally{p.data.fill(0);}}
+
+/**
+ * Fast in-memory live barcode and QR code decoder from an HTMLCanvasElement.
+ * Priority: Native BarcodeDetector -> jsQR -> ZXing MultiFormatReader.
+ * Returns decoded string or null if no valid code was found.
+ */
+export async function decodeCodeFromCanvas(canvas: HTMLCanvasElement): Promise<string | null> {
+  if (!canvas || canvas.width === 0 || canvas.height === 0) return null;
+
+  // 1. Native BarcodeDetector (instant hardware decoding in Android Chrome / Chromium)
+  const Native = (globalThis as unknown as {
+    BarcodeDetector?: new(options: { formats: string[] }) => {
+      detect: (c: HTMLCanvasElement) => Promise<{ rawValue: string }[]>;
+    };
+  }).BarcodeDetector;
+
+  if (Native) {
+    try {
+      const detector = new Native({
+        formats: [
+          'qr_code',
+          'code_128',
+          'code_39',
+          'code_93',
+          'ean_13',
+          'ean_8',
+          'itf',
+          'data_matrix',
+          'upc_a',
+          'upc_e',
+        ],
+      });
+      const results = await detector.detect(canvas);
+      if (results && results.length > 0 && results[0].rawValue) {
+        return results[0].rawValue.trim();
+      }
+    } catch {
+      // Fall through to jsQR
+    }
+  }
+
+  // 2. jsQR (extremely fast in-browser QR decoder ~2-5ms)
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (ctx) {
+    const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    try {
+      const result = jsQR(imgData.data, canvas.width, canvas.height, {
+        inversionAttempts: 'attemptBoth',
+      });
+      if (result && result.data && result.data.trim()) {
+        return result.data.trim();
+      }
+    } catch {
+      // Fall through to ZXing
+    }
+
+    // 3. ZXing MultiFormatReader for 1D barcodes and complex 2D codes
+    try {
+      const gray = new Uint8ClampedArray(canvas.width * canvas.height);
+      const data = imgData.data;
+      for (let i = 0; i < gray.length; i++) {
+        gray[i] = (data[i * 4] * 299 + data[i * 4 + 1] * 587 + data[i * 4 + 2] * 114) / 1000;
+      }
+      const luminanceSource = new RGBLuminanceSource(gray, canvas.width, canvas.height);
+      const binaryBitmap = new BinaryBitmap(new HybridBinarizer(luminanceSource));
+      const hints = new Map();
+      hints.set(DecodeHintType.POSSIBLE_FORMATS, [
+        BarcodeFormat.QR_CODE,
+        BarcodeFormat.CODE_128,
+        BarcodeFormat.CODE_39,
+        BarcodeFormat.CODE_93,
+        BarcodeFormat.EAN_13,
+        BarcodeFormat.EAN_8,
+        BarcodeFormat.DATA_MATRIX,
+        BarcodeFormat.UPC_A,
+        BarcodeFormat.UPC_E,
+      ]);
+      const reader = new MultiFormatReader();
+      reader.setHints(hints);
+      try {
+        const zxingResult = reader.decode(binaryBitmap);
+        if (zxingResult && zxingResult.getText()) {
+          return zxingResult.getText().trim();
+        }
+      } finally {
+        reader.reset();
+      }
+    } catch {
+      // None detected
+    }
+  }
+
+  return null;
+}
+

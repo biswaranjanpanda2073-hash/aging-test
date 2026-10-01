@@ -8,7 +8,7 @@ export const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'
 const envFile=path.join(root,'.env');
 export const env={...(fs.existsSync(envFile)?parseEnv(fs.readFileSync(envFile,'utf8')):{}),...process.env};
 if(env.LAN_IP && isIP(env.LAN_IP)!==4)throw new Error('LAN_IP must be the laptop IPv4 address. Run setup-https.ps1 again.');
-export const hosts=['localhost','127.0.0.1',...(env.LAN_IP?[env.LAN_IP]:[])];
+export const hosts=Array.from(new Set(['localhost','127.0.0.1',...(env.LAN_IP?[env.LAN_IP]:[]),'192.168.137.1']));
 export const origins=hosts.map(host=>`https://${host}:5173`);
 export function certificate() {
   const key=path.resolve(root,env.TLS_KEY||'../certs/lan-key.pem');

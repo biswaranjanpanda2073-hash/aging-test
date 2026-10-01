@@ -1,6 +1,7 @@
 annotated-doc==0.0.5
 annotated-types==0.8.0
 anyio==4.15.1
+async-timeout==5.0.1
 certifi==2026.7.22
 click==8.5.0
 et_xmlfile==2.0.0
@@ -24,3 +25,25 @@ typing-inspection==0.4.4
 typing_extensions==4.16.0
 uvicorn==0.53.0
 defusedxml==0.7.1
+# Battery OCR — RapidOCR with ONNX Runtime (no PaddlePaddle required).
+# Tested on Python 3.14 / Windows x64.
+rapidocr==3.9.2
+onnxruntime==1.30.0
+opencv-python-headless==4.11.0.86
+numpy==2.5.3
+Pillow==12.3.0
+Shapely==2.1.2
+pyclipper==1.4.0
+PyYAML==6.0.3
+omegaconf==2.3.1
+antlr4-python3-runtime==4.9.3
+colorlog==6.12.0
+requests==2.34.2
+urllib3==2.8.0
+charset-normalizer==3.5.2
+six==1.17.0
+tqdm==4.70.1
+flatbuffers==25.12.19
+protobuf==7.36.2
+python-multipart>=0.0.9
+

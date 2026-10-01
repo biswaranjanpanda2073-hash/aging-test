@@ -84,3 +84,387 @@
   .stage2-checkpoints-grid{grid-template-columns:1fr}
   .stage2-device-banner{flex-direction:column;align-items:flex-start}
 }
+
+/* ==========================================================================
+   Live Camera Scanner Styles
+   ========================================================================== */
+.live-scanner {
+  background: #ffffff;
+  border: 1.5px solid #dce3d9;
+  border-radius: 12px;
+  padding: 24px;
+  margin: 16px 0;
+  box-shadow: 0 4px 20px rgba(24, 62, 47, 0.06);
+}
+
+.live-scanner-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e3e9de;
+}
+
+.live-scanner-header h3 {
+  margin: 0;
+  color: #183e2f;
+  font-size: 20px;
+  font-weight: 750;
+}
+
+.scanner-target-badge {
+  margin: 0;
+  font-size: 13px;
+  background: #edf6dc;
+  color: #2b4e18;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-weight: 600;
+  border: 1px solid #cce2a6;
+}
+
+.camera-viewport-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+
+.camera-viewport {
+  position: relative;
+  width: 100%;
+  max-width: 580px;
+  aspect-ratio: 4 / 3;
+  background: #0b1510;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.35);
+  border: 2px solid #234b39;
+}
+
+.camera-viewport video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Guide overlay boxes */
+.live-guide {
+  position: absolute;
+  box-sizing: border-box;
+  pointer-events: none;
+  border: 2px solid #22c55e;
+  background: rgba(34, 197, 94, 0.08);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.52), 0 0 16px rgba(34, 197, 94, 0.4);
+  border-radius: 6px;
+  transition: all 0.2s ease-out;
+}
+
+.guide-corner {
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  border-color: #86efac;
+  border-style: solid;
+  pointer-events: none;
+}
+
+.guide-corner.tl {
+  top: -2px;
+  left: -2px;
+  border-width: 3.5px 0 0 3.5px;
+  border-top-left-radius: 4px;
+}
+
+.guide-corner.tr {
+  top: -2px;
+  right: -2px;
+  border-width: 3.5px 3.5px 0 0;
+  border-top-right-radius: 4px;
+}
+
+.guide-corner.bl {
+  bottom: -2px;
+  left: -2px;
+  border-width: 0 0 3.5px 3.5px;
+  border-bottom-left-radius: 4px;
+}
+
+.guide-corner.br {
+  bottom: -2px;
+  right: -2px;
+  border-width: 0 3.5px 3.5px 0;
+  border-bottom-right-radius: 4px;
+}
+
+.guide-tag {
+  position: absolute;
+  top: -26px;
+  left: 0;
+  background: #183e2f;
+  color: #86efac;
+  font-size: 11px;
+  font-weight: 750;
+  letter-spacing: 0.8px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  border: 1px solid #36694f;
+}
+
+/* Animated laser scanning line */
+.scanner-laser {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, rgba(34, 197, 94, 0) 0%, #4ade80 50%, rgba(34, 197, 94, 0) 100%);
+  box-shadow: 0 0 10px #4ade80, 0 0 20px #22c55e;
+  animation: scanLaser 2.2s ease-in-out infinite alternate;
+}
+
+@keyframes scanLaser {
+  0% {
+    top: 6%;
+    opacity: 0.8;
+  }
+  50% {
+    opacity: 1;
+  }
+  100% {
+    top: 92%;
+    opacity: 0.8;
+  }
+}
+
+/* Feedback & Guidance */
+.scanner-feedback {
+  width: 100%;
+  max-width: 580px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.scanner-instruction {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  color: #1e3a2c;
+}
+
+.scanner-guidance-pill {
+  background: #fdfbe8;
+  color: #785a06;
+  border: 1px solid #fae88d;
+  border-radius: 20px;
+  padding: 6px 16px;
+  font-size: 13px;
+  font-weight: 650;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+
+.scanner-status-line {
+  font-size: 13.5px;
+  color: #385542;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pulsing-dot {
+  width: 8px;
+  height: 8px;
+  background: #22c55e;
+  border-radius: 50%;
+  display: inline-block;
+  box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+  animation: pulseDot 1.5s infinite;
+}
+
+@keyframes pulseDot {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.7);
+  }
+  70% {
+    transform: scale(1.1);
+    box-shadow: 0 0 0 8px rgba(34, 197, 94, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0);
+  }
+}
+
+/* Consensus Verification Meter */
+.verification-meter {
+  width: 100%;
+  max-width: 360px;
+  background: #f3f7ee;
+  border: 1px solid #c9d8c3;
+  border-radius: 8px;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.meter-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #214028;
+}
+
+.meter-bar {
+  width: 100%;
+  height: 8px;
+  background: #dde5d7;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.meter-fill {
+  height: 100%;
+  background: #3eb555;
+  transition: width 0.25s ease-out;
+  border-radius: 4px;
+}
+
+/* Timeout & Error states */
+.scanner-timeout-card {
+  width: 100%;
+  background: #fff8f0;
+  border: 1.5px solid #f6cfaf;
+  border-radius: 10px;
+  padding: 16px;
+  color: #8c3f15;
+  margin-top: 6px;
+}
+
+.scanner-timeout-card p {
+  margin: 0 0 12px 0;
+  font-size: 13.5px;
+  color: #8c3f15;
+}
+
+.camera-error-card {
+  text-align: center;
+  background: #fff4ed;
+  border: 1.5px solid #f9cdb8;
+  border-radius: 12px;
+  padding: 28px 20px;
+  margin: 12px 0;
+}
+
+.camera-error-icon {
+  font-size: 38px;
+  margin-bottom: 8px;
+}
+
+.camera-error-card h4 {
+  margin: 0 0 8px 0;
+  color: #933314;
+  font-size: 18px;
+}
+
+.camera-error-card p {
+  margin: 0 0 18px 0;
+  color: #6d3320;
+  font-size: 14px;
+  max-width: 440px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.privacy-notice {
+  text-align: center;
+  font-size: 12px;
+  color: #728472;
+  margin: 12px 0 0 0;
+  font-style: italic;
+}
+
+/* ==========================================================================
+   Battery Photo Capture & Processing Cards
+   ========================================================================== */
+.battery-processing-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: #f0f7ec;
+  border: 1.5px dashed #40814d;
+  border-radius: 10px;
+  padding: 22px 18px;
+  text-align: center;
+  margin: 12px 0;
+  color: #1a3f2b;
+}
+
+.battery-processing-card strong {
+  font-size: 16px;
+  margin-top: 10px;
+  color: #19402c;
+}
+
+.battery-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid rgba(26, 63, 43, 0.2);
+  border-top-color: #1a3f2b;
+  border-radius: 50%;
+  animation: battery-spin 0.8s linear infinite;
+}
+
+@keyframes battery-spin {
+  to { transform: rotate(360deg); }
+}
+
+.battery-error-card {
+  background: #fff4ed;
+  border: 1.5px solid #f9cdb8;
+  border-radius: 10px;
+  padding: 18px 16px;
+  margin: 12px 0;
+  text-align: center;
+}
+
+.battery-error-card p {
+  color: #973616;
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 14px 0;
+  line-height: 1.5;
+}
+
+.btn-retake {
+  background: #973616;
+  color: #ffffff;
+  border: 1px solid #7c2a0f;
+  border-radius: 8px;
+  padding: 11px 22px;
+  font-weight: 700;
+  font-size: 14.5px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: background 0.15s;
+}
+
+.btn-retake:hover {
+  background: #7c2a0f;
+}

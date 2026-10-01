@@ -10,7 +10,8 @@
     "lint": "eslint src",
     "test": "vitest run",
     "ocr-assets": "node scripts/copy-ocr.mjs",
-    "test:browser": "node scripts/photo-browser-check.cjs",
+    "test:browser": "node scripts/live-scanner-check.mjs",
+    "test:live-scanner": "node scripts/live-scanner-check.mjs",
     "serve": "node scripts/serve.mjs",
     "check:setup": "node scripts/check-setup.mjs"
   },
