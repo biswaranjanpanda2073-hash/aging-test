@@ -11,6 +11,66 @@ HEADERS = ['Serial Number', 'Device Registration Time', 'Registration Battery %'
            'H3 Battery %', 'H3 Timestamp', 'H4 Battery %', 'H4 Timestamp',
            'Post-Aging Battery %', 'Post-Aging Timestamp', 'Final Status']
 
+NEW_HEADERS = [
+    'H1 Issue', 'H1 Issue Categories', 'H1 Remarks',
+    'H2 Issue', 'H2 Issue Categories', 'H2 Remarks',
+    'H3 Issue', 'H3 Issue Categories', 'H3 Remarks',
+    'H4 Issue', 'H4 Issue Categories', 'H4 Remarks',
+    'Post-Aging Issue', 'Post-Aging Issue Categories', 'Post-Aging Remarks',
+    'Long Press Power Test'
+]
+
+ALL_HEADERS = HEADERS + NEW_HEADERS
+
+
+def sanitize_formula_injection(text: str | None) -> str | None:
+    """Neutralize formula injection by prepending a single quote if string starts with formula characters."""
+    if text is None:
+        return None
+    s = str(text).strip()
+    if not s:
+        return ''
+    if s[0] in ('=', '+', '-', '@', '\t', '\r'):
+        return "'" + s
+    return s
+
+
+def extract_observations_from_row(sheet, row: int):
+    """Extract observations and power test result from row columns 15–30."""
+    obs = {}
+    for n in range(1, 5):
+        issue_raw = sheet.cell(row, 15 + 3 * (n - 1)).value
+        cat_raw = sheet.cell(row, 16 + 3 * (n - 1)).value
+        rem_raw = sheet.cell(row, 17 + 3 * (n - 1)).value
+        if issue_raw is not None and str(issue_raw).strip():
+            issue_val = 'yes' if str(issue_raw).strip().lower() == 'yes' else 'no'
+            cats = [c.strip() for c in str(cat_raw).split(',') if c.strip()] if cat_raw else []
+            obs[f'h{n}'] = {
+                'has_issue': issue_val,
+                'categories': cats,
+                'remarks': str(rem_raw) if rem_raw is not None else ''
+            }
+        else:
+            obs[f'h{n}'] = None
+
+    post_issue = sheet.cell(row, 27).value
+    post_cat = sheet.cell(row, 28).value
+    post_rem = sheet.cell(row, 29).value
+    if post_issue is not None and str(post_issue).strip():
+        issue_val = 'yes' if str(post_issue).strip().lower() == 'yes' else 'no'
+        cats = [c.strip() for c in str(post_cat).split(',') if c.strip()] if post_cat else []
+        obs['post'] = {
+            'has_issue': issue_val,
+            'categories': cats,
+            'remarks': str(post_rem) if post_rem is not None else ''
+        }
+    else:
+        obs['post'] = None
+
+    power_test = sheet.cell(row, 30).value
+    power_test_val = str(power_test).strip() if power_test is not None and str(power_test).strip() else None
+    return obs, power_test_val
+
 class Store:
     def __init__(self, path):
         self.path = Path(path)
@@ -58,12 +118,16 @@ class Store:
                 if [c.value for c in book['Devices'][1]][:14] != HEADERS:
                     book.close()
                     raise ValueError('Workbook headers do not match. Existing file preserved.')
+                # Ensure new column headers exist without modifying existing data
+                for idx, h_title in enumerate(NEW_HEADERS, start=15):
+                    if book['Devices'].cell(1, idx).value is None:
+                        book['Devices'].cell(1, idx, h_title)
             else:
                 book = Workbook()
                 book.active.title = 'Devices'
-                book.active.append(HEADERS)
+                book.active.append(ALL_HEADERS)
                 book.active.freeze_panes = 'D2'
-                book.active.auto_filter.ref = 'A1:N1'
+                book.active.auto_filter.ref = 'A1:AD1'
                 for col in book.active.columns:
                     book.active.column_dimensions[col[0].column_letter].width = 28
             try:
@@ -122,6 +186,7 @@ class Store:
                 next_cp = int(status_val.split('_')[-1])
             except ValueError:
                 pass
+        obs, power = extract_observations_from_row(sheet, row)
         return {
             'serial_number': serial,
             'status': status_val,
@@ -133,7 +198,9 @@ class Store:
             'registration_device_time': None,
             'last_server_received': reg_time,
             'last_device_time': None,
-            'last_battery': reg_bat
+            'last_battery': reg_bat,
+            'observations': obs,
+            'power_test_result': power
         }
 
     @staticmethod

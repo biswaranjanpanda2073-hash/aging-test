@@ -468,3 +468,207 @@
 .btn-retake:hover {
   background: #7c2a0f;
 }
+
+/* ==========================================================================
+   Observation & Power Test Form Styles
+   ========================================================================== */
+.obs-section {
+  background: #fbfdfa;
+  border: 1.5px solid #dbe5d6;
+  border-radius: 10px;
+  padding: 18px 20px;
+  margin: 18px 0;
+  text-align: left;
+}
+
+.obs-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.obs-title {
+  font-size: 15px;
+  font-weight: 750;
+  color: #1a3f2b;
+  margin: 0;
+}
+
+.obs-question-row {
+  margin-bottom: 14px;
+}
+
+.obs-label {
+  display: block;
+  font-size: 14px;
+  font-weight: 700;
+  color: #274530;
+  margin-bottom: 8px;
+}
+
+.obs-btn-group {
+  display: flex;
+  gap: 12px;
+}
+
+.obs-choice-btn {
+  flex: 1;
+  min-height: 44px;
+  background: #ffffff;
+  color: #314a37;
+  border: 1.5px solid #c9d8c3;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.obs-choice-btn:hover {
+  background: #f1f6ed;
+  border-color: #3b6d47;
+}
+
+.obs-choice-btn.selected-no {
+  background: #eef6e8;
+  color: #244d1c;
+  border-color: #4b8838;
+  box-shadow: 0 0 0 2px rgba(75, 136, 56, 0.25);
+}
+
+.obs-choice-btn.selected-yes {
+  background: #fdf2e9;
+  color: #983815;
+  border-color: #d96939;
+  box-shadow: 0 0 0 2px rgba(217, 105, 57, 0.25);
+}
+
+.obs-categories-box {
+  background: #ffffff;
+  border: 1.5px solid #e1e9dc;
+  border-radius: 8px;
+  padding: 14px 16px;
+  margin: 12px 0 16px 0;
+}
+
+.obs-categories-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #556653;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.obs-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #21372e;
+  padding: 6px 0;
+  cursor: pointer;
+}
+
+.obs-checkbox-label input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: #183e2f;
+  cursor: pointer;
+}
+
+.obs-remarks-field {
+  margin-top: 14px;
+}
+
+.obs-remarks-field label {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  color: #4c5d4b;
+  margin-bottom: 6px;
+}
+
+.obs-remarks-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: 14px;
+  border: 1px solid #b9c8b2;
+  border-radius: 7px;
+  padding: 10px 12px;
+  line-height: 1.45;
+  color: #21372e;
+  resize: vertical;
+}
+
+.obs-remarks-field textarea:focus {
+  outline: 2px solid #7da932;
+  border-color: #7da932;
+}
+
+.power-test-section {
+  background: #fbfdfa;
+  border: 1.5px solid #dbe5d6;
+  border-radius: 10px;
+  padding: 18px 20px;
+  margin: 18px 0;
+  text-align: left;
+}
+
+.power-test-btn-group {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.power-test-btn {
+  flex: 1;
+  min-height: 46px;
+  background: #ffffff;
+  color: #314a37;
+  border: 1.5px solid #c9d8c3;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 750;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.power-test-btn:hover {
+  background: #f1f6ed;
+}
+
+.power-test-btn.selected-pass {
+  background: #eef7e6;
+  color: #1e5218;
+  border-color: #438f32;
+  box-shadow: 0 0 0 2px rgba(67, 143, 50, 0.25);
+}
+
+.power-test-btn.selected-fail {
+  background: #fef0ee;
+  color: #a42718;
+  border-color: #d13a29;
+  box-shadow: 0 0 0 2px rgba(209, 58, 41, 0.25);
+}
+
+.power-test-btn.selected-hold {
+  background: #fef8eb;
+  color: #8c5d08;
+  border-color: #d99a1a;
+  box-shadow: 0 0 0 2px rgba(217, 154, 26, 0.25);
+}
+
+.stage2-obs-badge {
+  margin-top: 8px;
+  padding: 6px 10px;
+  background: #f4f8f1;
+  border: 1px solid #d5e2cf;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+

@@ -29,11 +29,18 @@ class Capture(Strict):
             raise ValueError('Registration has no target; other captures require a registered serial')
         return self
 
+ALLOWED_ISSUE_CATEGORIES = {'Display issue', 'Crashing / hanging issue', 'Other issue'}
+ALLOWED_POWER_TEST = {'Pass', 'Fail', 'Hold'}
+
 class Reading(Strict):
     serial_number: str = Field(min_length=1, max_length=64)
     battery_percent: int = Field(ge=0, le=100)
     device_timestamp: str | None = Field(default=None, max_length=16)
     capture_token: str = Field(min_length=20, max_length=100)
+    has_issue: Literal['yes', 'no'] | None = Field(default=None)
+    issue_categories: list[str] | None = Field(default=None)
+    remarks: str | None = Field(default=None, max_length=1000)
+    power_test_result: Literal['Pass', 'Fail', 'Hold'] | None = Field(default=None)
 
     @field_validator('serial_number')
     @classmethod
@@ -46,6 +53,27 @@ class Reading(Strict):
         if value is not None and not re.fullmatch(r'(?:0?[1-9]|1[0-2]):[0-5][0-9] (?:AM|PM)', value):
             raise ValueError('Device time must be HH:MM AM/PM or unavailable')
         return value
+
+    @field_validator('issue_categories')
+    @classmethod
+    def validate_categories(cls, value):
+        if value is not None:
+            if not isinstance(value, list):
+                raise ValueError('issue_categories must be a list')
+            for c in value:
+                if c not in ALLOWED_ISSUE_CATEGORIES:
+                    raise ValueError(f'Invalid issue category: {c}')
+        return value
+
+    @model_validator(mode='after')
+    def validate_issues(self):
+        if self.has_issue == 'yes':
+            if not self.issue_categories or len(self.issue_categories) == 0:
+                raise ValueError('At least one issue category must be selected when has_issue is yes')
+        elif self.has_issue == 'no':
+            if self.issue_categories and len(self.issue_categories) > 0:
+                raise ValueError('Issue categories must be empty when has_issue is no')
+        return self
 
 class Restart(Strict):
     checkpoint: int = Field(ge=1, le=4)
@@ -69,3 +97,6 @@ class Device(BaseModel):
     last_device_time: str | None
     last_battery: int
     values: list
+    observations: dict | None = None
+    power_test_result: str | None = None
+

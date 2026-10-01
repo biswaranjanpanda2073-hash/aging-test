@@ -47,10 +47,13 @@ export type BatteryDetectionResult = {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Strict parse: accepts only "0"–"100" followed by "%" as the whole token. */
+/** Strict parse: accepts only "0"–"100" followed by "%", or "Full charge" (case-insensitive) as 100. */
 export function parseBatteryPercentage(text: string): number | null {
-  const m = text.trim().match(/^(100|[0-9]{1,2})\s*%$/);
-  return m ? Number(m[1]) : null;
+  const trimmed = text.trim();
+  const m = trimmed.match(/^(100|[0-9]{1,2})\s*%$/);
+  if (m) return Number(m[1]);
+  if (/^full\s+charge$/i.test(trimmed.replace(/\s+/g, ' '))) return 100;
+  return null;
 }
 
 export function mapGuideToImageCoords(

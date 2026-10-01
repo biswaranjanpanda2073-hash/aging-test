@@ -58,6 +58,10 @@ threading.Thread(target=_init_ocr, name="rapidocr-init", daemon=True).start()
 # Prevents "184%" from matching as "84%".
 _PERCENT_RE = re.compile(r"(?<!\d)(100|[1-9][0-9]|[0-9])\s*%(?!\d)")
 
+# Matches "full charge" case-insensitively with normalized whitespace.
+# Isolated "Full", "Charging", or "Charge" must NOT match.
+_FULL_CHARGE_RE = re.compile(r"\bfull\s+charge\b", re.IGNORECASE)
+
 
 def _parse_battery(text: str) -> int | None:
     """Return the first strictly valid battery percentage, or None."""
@@ -66,6 +70,50 @@ def _parse_battery(text: str) -> int | None:
         if 0 <= value <= 100:
             return value
     return None
+
+
+def _sort_ocr_reading_order(txts: tuple[str, ...], scores: tuple[float, ...], boxes: Any) -> tuple[str, float]:
+    """Sort RapidOCR results into natural reading order and calculate confidence."""
+    if not txts:
+        return "", 0.0
+    if boxes is None or len(boxes) != len(txts):
+        raw = " ".join(txts)
+        score = float(max(scores)) if scores else 0.0
+        return raw, score
+
+    items = []
+    for txt, score, box in zip(txts, scores, boxes):
+        box_arr = np.array(box)
+        min_x = float(np.min(box_arr[:, 0]))
+        min_y = float(np.min(box_arr[:, 1]))
+        max_y = float(np.max(box_arr[:, 1]))
+        h = max(1.0, max_y - min_y)
+        items.append({"txt": txt, "score": float(score), "x": min_x, "y": min_y, "h": h})
+
+    # Group into lines by vertical proximity
+    lines: list[dict] = []
+    for it in sorted(items, key=lambda i: i["y"]):
+        placed = False
+        for l in lines:
+            if abs(it["y"] - l["y"]) < min(it["h"], l["h"]) * 0.6:
+                l["items"].append(it)
+                l["y"] = min(l["y"], it["y"])
+                l["h"] = max(l["h"], it["h"])
+                placed = True
+                break
+        if not placed:
+            lines.append({"y": it["y"], "h": it["h"], "items": [it]})
+
+    ordered_txts: list[str] = []
+    all_scores: list[float] = []
+    for l in sorted(lines, key=lambda l: l["y"]):
+        for it in sorted(l["items"], key=lambda i: i["x"]):
+            ordered_txts.append(it["txt"])
+            all_scores.append(it["score"])
+
+    raw = " ".join(ordered_txts)
+    score = float(max(all_scores)) if all_scores else 0.0
+    return raw, score
 
 
 # ---------------------------------------------------------------------------
@@ -210,11 +258,36 @@ def run_battery_ocr(
             if not result.txts:
                 continue
 
-            raw = " ".join(result.txts)
-            score = float(max(result.scores)) if result.scores else 0.0
+            raw, score = _sort_ocr_reading_order(result.txts, result.scores, getattr(result, "boxes", None))
+            normalized_raw = " ".join(raw.split())
 
-            value = _parse_battery(raw)
-            if value is None:
+            # Check for numerical percentages
+            all_pcts = [int(m.group(1)) for m in _PERCENT_RE.finditer(normalized_raw) if 0 <= int(m.group(1)) <= 100]
+            has_full_charge = bool(_FULL_CHARGE_RE.search(normalized_raw))
+
+            # Require sufficient OCR confidence
+            if score < 0.50:
+                continue
+
+            if has_full_charge:
+                # If a full-charge phrase conflicts with a numerical percentage below 100%, request a retake
+                conflicting = [p for p in all_pcts if p < 100]
+                if conflicting:
+                    return fail(
+                        f"Conflicting readings: 'Full charge' detected alongside a lower percentage ({conflicting[0]}%). Please retake photo.",
+                        attempts,
+                    )
+                value = 100
+            elif all_pcts:
+                if len(set(all_pcts)) > 1:
+                    return fail(
+                        "Ambiguous: conflicting percentages detected. "
+                        "Drag a green box around the battery digits to isolate.",
+                        attempts,
+                    )
+                value = all_pcts[0]
+            else:
+                # Do not treat "Charging", "Charge", or isolated "Full" as 100%
                 continue
 
             seen.add(value)
@@ -229,7 +302,7 @@ def run_battery_ocr(
                 "success": True,
                 "battery_percent": value,
                 "confidence": round(score, 4),
-                "raw_text": raw,
+                "raw_text": normalized_raw,
                 "method": method_tag,
                 "processing_time_ms": round(elapsed() * 1000, 1),
                 "error": None,

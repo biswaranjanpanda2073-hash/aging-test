@@ -3,7 +3,7 @@ import { api, submit, ApiError } from './api';
 import { Scanner } from './Scanner';
 import { parseQRSerial } from './qr';
 import { detectBatteryPercentage } from './batteryOCR';
-import type { Action, Device, Reading } from './types';
+import type { Action, Device, Reading, IssueCategory, PowerTestResult } from './types';
 
 const modules = [
   { name: 'Device Registration', description: 'Scan QR and initial battery', number: '01' },
@@ -45,6 +45,15 @@ export default function App() {
   const [cpBatteryProcessing, setCpBatteryProcessing] = useState(false);
   const [cpBatteryError, setCpBatteryError] = useState<string | null>(null);
 
+  // Stage 02 (Aging Test) issue observation state for review screen
+  const [cpHasIssue, setCpHasIssue] = useState<'yes' | 'no' | null>(null);
+  const [cpCategories, setCpCategories] = useState<{ display: boolean; crashing: boolean; other: boolean }>({
+    display: false,
+    crashing: false,
+    other: false,
+  });
+  const [cpRemarks, setCpRemarks] = useState('');
+
   // Dedicated 2-step states for Step 03 (Post Test / Packing)
   const [postSerial, setPostSerial] = useState('');
   const [postBattery, setPostBattery] = useState<number | null>(null);
@@ -55,6 +64,16 @@ export default function App() {
   const [postConfirmed, setPostConfirmed] = useState<Device | null>(null);
   const [postManual, setPostManual] = useState(false);
   const [postManualInput, setPostManualInput] = useState('');
+
+  // Dedicated Stage 03 observation and long-press power test states
+  const [postHasIssue, setPostHasIssue] = useState<'yes' | 'no' | null>(null);
+  const [postCategories, setPostCategories] = useState<{ display: boolean; crashing: boolean; other: boolean }>({
+    display: false,
+    crashing: false,
+    other: false,
+  });
+  const [postRemarks, setPostRemarks] = useState('');
+  const [postPowerTest, setPostPowerTest] = useState<PowerTestResult | null>(null);
 
   // Hidden file input refs for rear-camera photo capture
   const regBatteryInputRef = useRef<HTMLInputElement>(null);
@@ -195,6 +214,10 @@ export default function App() {
     setPostScanningQR(false);
     setPostBatteryProcessing(false);
     setPostBatteryError(null);
+    setPostHasIssue(null);
+    setPostCategories({ display: false, crashing: false, other: false });
+    setPostRemarks('');
+    setPostPowerTest(null);
     setError('');
     setMessage('');
   };
@@ -211,6 +234,9 @@ export default function App() {
     setLookupScanningQR(false);
     setSerial('');
     setLookupPhase('scan');
+    setCpHasIssue(null);
+    setCpCategories({ display: false, crashing: false, other: false });
+    setCpRemarks('');
     setError('');
     setMessage('');
   };
@@ -231,6 +257,9 @@ export default function App() {
     resetPostStage();
     setCpBatteryProcessing(false);
     setCpBatteryError(null);
+    setCpHasIssue(null);
+    setCpCategories({ display: false, crashing: false, other: false });
+    setCpRemarks('');
   };
 
   // Synchronous triggers to preserve browser user activation
@@ -356,10 +385,17 @@ export default function App() {
           capture_token: token
         });
         setAction(batteryAction);
+        setCpHasIssue(null);
+        setCpCategories({ display: false, crashing: false, other: false });
+        setCpRemarks('');
         setCpBatteryError(null);
       } else if (stage === 'post') {
         setPostBattery(pct);
         setPostToken(token);
+        setPostHasIssue(null);
+        setPostCategories({ display: false, crashing: false, other: false });
+        setPostRemarks('');
+        setPostPowerTest(null);
         setPostBatteryError(null);
       }
     } catch (err) {
@@ -383,6 +419,33 @@ export default function App() {
     }
   };
 
+  // Helper validation functions for observations
+  const getCpCategoryList = (): IssueCategory[] => {
+    if (cpHasIssue !== 'yes') return [];
+    const list: IssueCategory[] = [];
+    if (cpCategories.display) list.push('Display issue');
+    if (cpCategories.crashing) list.push('Crashing / hanging issue');
+    if (cpCategories.other) list.push('Other issue');
+    return list;
+  };
+
+  const isCpObservationValid =
+    cpHasIssue === 'no' ||
+    (cpHasIssue === 'yes' && (cpCategories.display || cpCategories.crashing || cpCategories.other));
+
+  const getPostCategoryList = (): IssueCategory[] => {
+    if (postHasIssue !== 'yes') return [];
+    const list: IssueCategory[] = [];
+    if (postCategories.display) list.push('Display issue');
+    if (postCategories.crashing) list.push('Crashing / hanging issue');
+    if (postCategories.other) list.push('Other issue');
+    return list;
+  };
+
+  const isPostObservationValid =
+    postHasIssue === 'no' ||
+    (postHasIssue === 'yes' && (postCategories.display || postCategories.crashing || postCategories.other));
+
   // Step 01: Confirm & Register in Excel
   const confirmRegistration = () => perform(async () => {
     if (!regSerial || regBattery === null || !regToken) return;
@@ -399,12 +462,25 @@ export default function App() {
 
   // Step 03: Confirm & Save Post-Aging Packing in Excel
   const confirmPostAging = () => perform(async () => {
-    if (!postSerial || postBattery === null || !postToken) return;
+    if (
+      !postSerial ||
+      postBattery === null ||
+      !postToken ||
+      postHasIssue === null ||
+      !isPostObservationValid ||
+      postPowerTest === null
+    ) {
+      return;
+    }
     const readingPayload: Reading = {
       serial_number: postSerial,
       battery_percent: postBattery,
       device_timestamp: null,
-      capture_token: postToken
+      capture_token: postToken,
+      has_issue: postHasIssue,
+      issue_categories: getPostCategoryList(),
+      remarks: postRemarks.trim() || null,
+      power_test_result: postPowerTest,
     };
     const next = await submit('post-aging', readingPayload, postSerial);
     setPostConfirmed(next);
@@ -465,8 +541,14 @@ export default function App() {
   };
 
   const confirmCheckpoint = () => perform(async () => {
-    if (!reading) return;
-    const next = await submit(action, reading, device?.serial_number);
+    if (!reading || cpHasIssue === null || !isCpObservationValid) return;
+    const readingPayload: Reading = {
+      ...reading,
+      has_issue: cpHasIssue,
+      issue_categories: getCpCategoryList(),
+      remarks: cpRemarks.trim() || null,
+    };
+    const next = await submit(action, readingPayload, device?.serial_number);
     let updatedDevice = next;
     if (next.pending_restart) {
       try {
@@ -481,6 +563,9 @@ export default function App() {
     setDevice(updatedDevice);
     setSerial(updatedDevice.serial_number);
     setReading(null);
+    setCpHasIssue(null);
+    setCpCategories({ display: false, crashing: false, other: false });
+    setCpRemarks('');
     setMessage(`✓ Reading for ${action.toUpperCase()} (${reading.battery_percent}%) stored in Excel successfully.`);
   });
 
@@ -1018,11 +1103,15 @@ export default function App() {
                             {[1, 2, 3, 4].map((n) => {
                               const val = device?.values[2 * n + 1];
                               const time = device?.values[2 * n + 2];
+                              const issueVal = device?.values[14 + 3 * (n - 1)];
                               return (
                                 <div key={n} style={{ fontSize: 13 }}>
                                   <strong>H{n}:</strong>{' '}
                                   {val !== null && val !== undefined ? (
-                                    <span style={{ color: '#2b5220', fontWeight: 650 }}>{val}% {time ? `(${time})` : ''}</span>
+                                    <span style={{ color: '#2b5220', fontWeight: 650 }}>
+                                      {val}% {time ? `(${time})` : ''}
+                                      {issueVal === 'Yes' ? ' [⚠ Issue]' : issueVal === 'No' ? ' [✓ OK]' : ''}
+                                    </span>
                                   ) : action === `h${n}` ? (
                                     <span style={{ color: '#005bb5', fontWeight: 650 }}>→ {reading.battery_percent}% (Saving now)</span>
                                   ) : (
@@ -1035,6 +1124,90 @@ export default function App() {
                         </div>
                       )}
 
+                      {/* Issue Observations Section for Checkpoints H1–H4 */}
+                      <div className="obs-section">
+                        <div className="obs-header">
+                          <h4 className="obs-title">Issue Observation</h4>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: cpHasIssue ? '#254e1d' : '#b3261e' }}>
+                            {cpHasIssue ? 'Answered' : 'Required Selection *'}
+                          </span>
+                        </div>
+
+                        <div className="obs-question-row">
+                          <label className="obs-label">Is any issue observed? *</label>
+                          <div className="obs-btn-group">
+                            <button
+                              type="button"
+                              className={`obs-choice-btn ${cpHasIssue === 'no' ? 'selected-no' : ''}`}
+                              onClick={() => {
+                                setCpHasIssue('no');
+                                setCpCategories({ display: false, crashing: false, other: false });
+                              }}
+                            >
+                              {cpHasIssue === 'no' ? '✓ No' : 'No'}
+                            </button>
+                            <button
+                              type="button"
+                              className={`obs-choice-btn ${cpHasIssue === 'yes' ? 'selected-yes' : ''}`}
+                              onClick={() => setCpHasIssue('yes')}
+                            >
+                              {cpHasIssue === 'yes' ? '⚠ Yes' : 'Yes'}
+                            </button>
+                          </div>
+                          {cpHasIssue === null && (
+                            <p style={{ margin: '6px 0 0', fontSize: 13, color: '#889886', fontStyle: 'italic' }}>
+                              Select Yes or No to proceed.
+                            </p>
+                          )}
+                        </div>
+
+                        {cpHasIssue === 'yes' && (
+                          <div className="obs-categories-box">
+                            <div className="obs-categories-title">Select Issue Categories (at least one required) *</div>
+                            <label className="obs-checkbox-label">
+                              <input
+                                type="checkbox"
+                                checked={cpCategories.display}
+                                onChange={(e) => setCpCategories((prev) => ({ ...prev, display: e.target.checked }))}
+                              />
+                              <span>Display issue</span>
+                            </label>
+                            <label className="obs-checkbox-label">
+                              <input
+                                type="checkbox"
+                                checked={cpCategories.crashing}
+                                onChange={(e) => setCpCategories((prev) => ({ ...prev, crashing: e.target.checked }))}
+                              />
+                              <span>Crashing / hanging issue</span>
+                            </label>
+                            <label className="obs-checkbox-label">
+                              <input
+                                type="checkbox"
+                                checked={cpCategories.other}
+                                onChange={(e) => setCpCategories((prev) => ({ ...prev, other: e.target.checked }))}
+                              />
+                              <span>Other issue</span>
+                            </label>
+                            {cpHasIssue === 'yes' && !cpCategories.display && !cpCategories.crashing && !cpCategories.other && (
+                              <p style={{ margin: '8px 0 0', fontSize: 13, color: '#b3261e', fontWeight: 600 }}>
+                                ⚠ Please select at least one issue category.
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="obs-remarks-field">
+                          <label htmlFor="cp-remarks">Observations / remarks (optional):</label>
+                          <textarea
+                            id="cp-remarks"
+                            rows={3}
+                            value={cpRemarks}
+                            onChange={(e) => setCpRemarks(e.target.value)}
+                            placeholder="Enter any additional observations, notes, or issue descriptions..."
+                          />
+                        </div>
+                      </div>
+
                       <p style={{ margin: '16px 0 20px', fontSize: 14 }}>
                         Compare these values with the device screen. Click confirm to store directly in Excel.
                       </p>
@@ -1043,7 +1216,7 @@ export default function App() {
                         <button
                           type="button"
                           style={{ flex: 2, minHeight: 52, fontSize: 16 }}
-                          disabled={busy || !connected}
+                          disabled={busy || !connected || cpHasIssue === null || !isCpObservationValid}
                           onClick={() => void confirmCheckpoint()}
                         >
                           {busy ? 'Saving to Excel…' : `✓ Confirm & Save ${action.toUpperCase()} to Excel`}
@@ -1060,7 +1233,12 @@ export default function App() {
                           type="button"
                           className="text-button"
                           disabled={busy}
-                          onClick={() => setReading(null)}
+                          onClick={() => {
+                            setReading(null);
+                            setCpHasIssue(null);
+                            setCpCategories({ display: false, crashing: false, other: false });
+                            setCpRemarks('');
+                          }}
                         >
                           Cancel
                         </button>
@@ -1260,7 +1438,41 @@ export default function App() {
                                       <>
                                         <div className="stage2-cp-value" style={{ color: '#254e1d' }}>{savedVal}%</div>
                                         <div className="stage2-cp-time">Saved at {savedTime || 'Recorded'}</div>
-                                        <p style={{ margin: 0, fontSize: 13, color: '#385e30' }}>Row updated in Excel</p>
+                                        {(() => {
+                                          const issueVal = device.values[14 + 3 * (n - 1)];
+                                          const catVal = device.values[15 + 3 * (n - 1)];
+                                          const remVal = device.values[16 + 3 * (n - 1)];
+                                          const obsObj = device.observations?.[`h${n}`];
+                                          const hasIssue = issueVal === 'Yes' || obsObj?.has_issue === 'yes';
+                                          const isNoIssue = issueVal === 'No' || obsObj?.has_issue === 'no';
+                                          const categories = catVal || obsObj?.categories?.join(', ');
+                                          const remarks = remVal || obsObj?.remarks;
+
+                                          if (hasIssue) {
+                                            return (
+                                              <div className="stage2-obs-badge" style={{ borderColor: '#f4c7b8', background: '#fff5f2' }}>
+                                                <span style={{ color: '#b91c1c', fontWeight: 650 }}>
+                                                  ⚠ Issue: {categories || 'Reported'}
+                                                </span>
+                                                {remarks ? <div style={{ fontSize: 11, color: '#7c2a0f', marginTop: 2 }}>&ldquo;{remarks}&rdquo;</div> : null}
+                                              </div>
+                                            );
+                                          } else if (isNoIssue) {
+                                            return (
+                                              <div className="stage2-obs-badge">
+                                                <span style={{ color: '#254e1d' }}>✓ No issue observed</span>
+                                                {remarks ? <div style={{ fontSize: 11, color: '#556653', marginTop: 2 }}>&ldquo;{remarks}&rdquo;</div> : null}
+                                              </div>
+                                            );
+                                          } else {
+                                            return (
+                                              <div className="stage2-obs-badge" style={{ background: '#f8faf6', color: '#7a8877' }}>
+                                                <span style={{ fontStyle: 'italic' }}>Observations: Not recorded</span>
+                                              </div>
+                                            );
+                                          }
+                                        })()}
+                                        <p style={{ margin: '8px 0 0', fontSize: 13, color: '#385e30' }}>Row updated in Excel</p>
                                       </>
                                     ) : isCurrent ? (
                                       <>
@@ -1365,15 +1577,43 @@ export default function App() {
                       <p style={{ margin: '0 0 16px', color: '#4d594b' }}>
                         Device <strong>{postConfirmed.serial_number}</strong> has been updated in Excel with status <strong>PACKING_READY</strong>.
                       </p>
-                      <div className="scanned-value-box" style={{ maxWidth: 420, margin: '0 auto 24px', justifyContent: 'space-around' }}>
-                        <div style={{ textAlign: 'left' }}>
-                          <div className="scanned-label">Serial Number</div>
-                          <div className="scanned-text">{postConfirmed.serial_number}</div>
+                      <div className="scanned-value-box" style={{ maxWidth: 460, margin: '0 auto 24px', flexDirection: 'column', gap: 12, textAlign: 'left', background: '#ffffff' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+                          <div>
+                            <div className="scanned-label">Serial Number</div>
+                            <div className="scanned-text" style={{ fontSize: 20 }}>{postConfirmed.serial_number}</div>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <div className="scanned-label">Final Battery</div>
+                            <div className="scanned-text" style={{ color: '#27521c', fontSize: 20 }}>{postBattery}%</div>
+                          </div>
                         </div>
-                        <div style={{ textAlign: 'right' }}>
-                          <div className="scanned-label">Final Battery</div>
-                          <div className="scanned-text" style={{ color: '#27521c' }}>{postBattery}%</div>
+                        <hr style={{ width: '100%', margin: '4px 0', borderColor: '#e1e9dc' }} />
+                        <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
+                          <div>
+                            <div className="scanned-label">Long Press Power Test</div>
+                            <div style={{ fontSize: 16, fontWeight: 750, marginTop: 4, color: (postPowerTest || postConfirmed.power_test_result) === 'Pass' ? '#27521c' : (postPowerTest || postConfirmed.power_test_result) === 'Fail' ? '#b3261e' : '#8c5d08' }}>
+                              {postPowerTest || postConfirmed.power_test_result || 'Pass'}
+                            </div>
+                          </div>
+                          <div style={{ textAlign: 'right' }}>
+                            <div className="scanned-label">Issue Observation</div>
+                            <div style={{ fontSize: 14, fontWeight: 650, marginTop: 4 }}>
+                              {postHasIssue === 'yes' ? (
+                                <span style={{ color: '#b3261e' }}>⚠ Issues: {getPostCategoryList().join(', ') || 'Yes'}</span>
+                              ) : postHasIssue === 'no' ? (
+                                <span style={{ color: '#27521c' }}>✓ No issue observed</span>
+                              ) : (
+                                <span>Recorded</span>
+                              )}
+                            </div>
+                          </div>
                         </div>
+                        {postRemarks && (
+                          <div style={{ width: '100%', fontSize: 13, color: '#576755', fontStyle: 'italic', marginTop: 2 }}>
+                            Remarks: &ldquo;{postRemarks}&rdquo;
+                          </div>
+                        )}
                       </div>
 
                       <div className="actions" style={{ justifyContent: 'center' }}>
@@ -1553,7 +1793,7 @@ export default function App() {
                       {postSerial && postBattery !== null && (
                         <div className="confirm-registration-card">
                           <span className="eyebrow" style={{ color: '#27521c' }}>READY TO PACK</span>
-                          <h3 style={{ margin: '6px 0 14px' }}>Confirm Post-Aging Battery</h3>
+                          <h3 style={{ margin: '6px 0 14px' }}>Confirm Post-Aging Battery & Test Results</h3>
                           <div className="reading-grid" style={{ marginBottom: 20 }}>
                             <div>
                               <small>Serial Number</small>
@@ -1567,7 +1807,7 @@ export default function App() {
                           <p style={{ margin: '0 0 18px', fontSize: 14 }}>
                             {postBattery >= 70 ? (
                               <span style={{ color: '#183e2f' }}>
-                                ✓ Battery level is within packing range (70–100%). Device will be marked <strong>PACKING READY</strong>.
+                                ✓ Battery level is within packing range (70–100%). Device will be marked <strong>PACKING READY</strong> in Excel.
                               </span>
                             ) : (
                               <span style={{ color: '#b91c1c' }}>
@@ -1575,11 +1815,137 @@ export default function App() {
                               </span>
                             )}
                           </p>
+
+                          {/* Issue Observations Section for Post Test / Packing */}
+                          <div className="obs-section">
+                            <div className="obs-header">
+                              <h4 className="obs-title">Issue Observation</h4>
+                              <span style={{ fontSize: 12, fontWeight: 700, color: postHasIssue ? '#254e1d' : '#b3261e' }}>
+                                {postHasIssue ? 'Answered' : 'Required Selection *'}
+                              </span>
+                            </div>
+
+                            <div className="obs-question-row">
+                              <label className="obs-label">Is any issue observed? *</label>
+                              <div className="obs-btn-group">
+                                <button
+                                  type="button"
+                                  className={`obs-choice-btn ${postHasIssue === 'no' ? 'selected-no' : ''}`}
+                                  onClick={() => {
+                                    setPostHasIssue('no');
+                                    setPostCategories({ display: false, crashing: false, other: false });
+                                  }}
+                                >
+                                  {postHasIssue === 'no' ? '✓ No' : 'No'}
+                                </button>
+                                <button
+                                  type="button"
+                                  className={`obs-choice-btn ${postHasIssue === 'yes' ? 'selected-yes' : ''}`}
+                                  onClick={() => setPostHasIssue('yes')}
+                                >
+                                  {postHasIssue === 'yes' ? '⚠ Yes' : 'Yes'}
+                                </button>
+                              </div>
+                              {postHasIssue === null && (
+                                <p style={{ margin: '6px 0 0', fontSize: 13, color: '#889886', fontStyle: 'italic' }}>
+                                  Select Yes or No to proceed.
+                                </p>
+                              )}
+                            </div>
+
+                            {postHasIssue === 'yes' && (
+                              <div className="obs-categories-box">
+                                <div className="obs-categories-title">Select Issue Categories (at least one required) *</div>
+                                <label className="obs-checkbox-label">
+                                  <input
+                                    type="checkbox"
+                                    checked={postCategories.display}
+                                    onChange={(e) => setPostCategories((prev) => ({ ...prev, display: e.target.checked }))}
+                                  />
+                                  <span>Display issue</span>
+                                </label>
+                                <label className="obs-checkbox-label">
+                                  <input
+                                    type="checkbox"
+                                    checked={postCategories.crashing}
+                                    onChange={(e) => setPostCategories((prev) => ({ ...prev, crashing: e.target.checked }))}
+                                  />
+                                  <span>Crashing / hanging issue</span>
+                                </label>
+                                <label className="obs-checkbox-label">
+                                  <input
+                                    type="checkbox"
+                                    checked={postCategories.other}
+                                    onChange={(e) => setPostCategories((prev) => ({ ...prev, other: e.target.checked }))}
+                                  />
+                                  <span>Other issue</span>
+                                </label>
+                                {postHasIssue === 'yes' && !postCategories.display && !postCategories.crashing && !postCategories.other && (
+                                  <p style={{ margin: '8px 0 0', fontSize: 13, color: '#b3261e', fontWeight: 600 }}>
+                                    ⚠ Please select at least one issue category.
+                                  </p>
+                                )}
+                              </div>
+                            )}
+
+                            <div className="obs-remarks-field">
+                              <label htmlFor="post-remarks">Observations / remarks (optional):</label>
+                              <textarea
+                                id="post-remarks"
+                                rows={3}
+                                value={postRemarks}
+                                onChange={(e) => setPostRemarks(e.target.value)}
+                                placeholder="Enter any post-aging observations, notes, or issue descriptions..."
+                              />
+                            </div>
+                          </div>
+
+                          {/* Long Press Power Off/On Test Section */}
+                          <div className="power-test-section">
+                            <div className="obs-header">
+                              <h4 className="obs-title">Long Press Power Off/On Test *</h4>
+                              <span style={{ fontSize: 12, fontWeight: 700, color: postPowerTest ? '#254e1d' : '#b3261e' }}>
+                                {postPowerTest ? `Selected: ${postPowerTest}` : 'Required Selection *'}
+                              </span>
+                            </div>
+                            <p style={{ margin: '4px 0 12px', fontSize: 13, color: '#576755' }}>
+                              Record the operator assessment for the physical long-press power off and power on cycle.
+                            </p>
+                            <div className="power-test-btn-group">
+                              <button
+                                type="button"
+                                className={`power-test-btn ${postPowerTest === 'Pass' ? 'selected-pass' : ''}`}
+                                onClick={() => setPostPowerTest('Pass')}
+                              >
+                                {postPowerTest === 'Pass' ? '✓ Pass' : 'Pass'}
+                              </button>
+                              <button
+                                type="button"
+                                className={`power-test-btn ${postPowerTest === 'Fail' ? 'selected-fail' : ''}`}
+                                onClick={() => setPostPowerTest('Fail')}
+                              >
+                                {postPowerTest === 'Fail' ? '✕ Fail' : 'Fail'}
+                              </button>
+                              <button
+                                type="button"
+                                className={`power-test-btn ${postPowerTest === 'Hold' ? 'selected-hold' : ''}`}
+                                onClick={() => setPostPowerTest('Hold')}
+                              >
+                                {postPowerTest === 'Hold' ? '⏸ Hold' : 'Hold'}
+                              </button>
+                            </div>
+                            {postPowerTest === null && (
+                              <p style={{ margin: '8px 0 0', fontSize: 13, color: '#889886', fontStyle: 'italic' }}>
+                                Please select Pass, Fail, or Hold to proceed.
+                              </p>
+                            )}
+                          </div>
+
                           <div className="actions">
                             <button
                               type="button"
                               style={{ minHeight: 52, fontSize: 16, flex: 2 }}
-                              disabled={busy || !connected || postBattery < 70}
+                              disabled={busy || !connected || postBattery < 70 || postHasIssue === null || !isPostObservationValid || postPowerTest === null}
                               onClick={() => void confirmPostAging()}
                             >
                               {busy ? 'Saving to Excel…' : '✓ Confirm & Save to Excel'}

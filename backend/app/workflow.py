@@ -4,7 +4,7 @@ import secrets
 from datetime import datetime, timezone, timedelta
 from fastapi import HTTPException
 from .config import CAPTURE_TTL, CHECKPOINT_SECONDS
-from .storage import Store
+from .storage import Store, extract_observations_from_row, sanitize_formula_injection
 
 
 def now():
@@ -73,7 +73,10 @@ class Workflow:
         excel_status = book['Devices'].cell(row, 14).value
         if excel_status and excel_status != state.get('status'):
             state['status'] = excel_status
-        return {**state, 'values': [book['Devices'].cell(row, c).value for c in range(1, 15)]}
+        obs, power = extract_observations_from_row(book['Devices'], row)
+        state['observations'] = obs
+        state['power_test_result'] = power
+        return {**state, 'values': [book['Devices'].cell(row, c).value for c in range(1, 31)]}
 
     def reading(self, action, reading, target=None):
         def operation(book):
@@ -89,11 +92,13 @@ class Workflow:
             stamp = now().isoformat()
             sheet = book['Devices']
             if action == 'register':
-                sheet.append([serial, stamp, reading.battery_percent] + [None] * 11)
+                sheet.append([serial, stamp, reading.battery_percent] + [None] * 27)
                 row = sheet.max_row
                 state = {'serial_number': serial, 'status': 'READY_FOR_AGING' if reading.battery_percent == 100 else 'WAITING_FOR_100_PERCENT_CHARGE',
                          'pending_restart': None, 'next_checkpoint': 1, 'aging_started': None, 'next_due': None,
-                         'events': [], 'registration_device_time': reading.device_timestamp}
+                         'events': [], 'registration_device_time': reading.device_timestamp,
+                         'observations': {'h1': None, 'h2': None, 'h3': None, 'h4': None, 'post': None},
+                         'power_test_result': None}
                 book['Workflow'].append([serial, '{}'])
                 meta = book['Workflow'].max_row
             else:
@@ -120,6 +125,15 @@ class Workflow:
                         reject('This hourly checkpoint is not due yet.')
                     sheet.cell(row, 2 * n + 2, reading.battery_percent)
                     sheet.cell(row, 2 * n + 3, reading.device_timestamp)
+                    if reading.has_issue is not None:
+                        sheet.cell(row, 15 + 3 * (n - 1), 'Yes' if reading.has_issue == 'yes' else 'No')
+                        sheet.cell(row, 16 + 3 * (n - 1), ', '.join(reading.issue_categories) if reading.issue_categories else None)
+                        sheet.cell(row, 17 + 3 * (n - 1), sanitize_formula_injection(reading.remarks))
+                        state.setdefault('observations', {})[f'h{n}'] = {
+                            'has_issue': reading.has_issue,
+                            'categories': reading.issue_categories or [],
+                            'remarks': reading.remarks or ''
+                        }
                     state['pending_restart'] = n
                     state['next_due'] = None
                 elif action == 'post-aging':
@@ -128,9 +142,33 @@ class Workflow:
                     sheet.cell(row, 12, reading.battery_percent)
                     # Assignment permits clearing an unavailable time after an earlier reading.
                     sheet.cell(row, 13).value = reading.device_timestamp
+                    if reading.has_issue is not None:
+                        sheet.cell(row, 27, 'Yes' if reading.has_issue == 'yes' else 'No')
+                        sheet.cell(row, 28, ', '.join(reading.issue_categories) if reading.issue_categories else None)
+                        sheet.cell(row, 29, sanitize_formula_injection(reading.remarks))
+                        state.setdefault('observations', {})['post'] = {
+                            'has_issue': reading.has_issue,
+                            'categories': reading.issue_categories or [],
+                            'remarks': reading.remarks or ''
+                        }
+                    if reading.power_test_result is not None:
+                        sheet.cell(row, 30, reading.power_test_result)
+                        state['power_test_result'] = reading.power_test_result
                     state['status'] = 'PACKING_READY' if reading.battery_percent >= 70 else 'POST_AGING_CHARGE'
             state.update(last_server_received=stamp, last_device_time=reading.device_timestamp, last_battery=reading.battery_percent)
-            state['events'].append({'action': action, 'battery': reading.battery_percent, 'device_time': reading.device_timestamp, 'server_received': stamp})
+            event_item = {
+                'action': action,
+                'battery': reading.battery_percent,
+                'device_time': reading.device_timestamp,
+                'server_received': stamp
+            }
+            if reading.has_issue is not None:
+                event_item['has_issue'] = reading.has_issue
+                event_item['issue_categories'] = reading.issue_categories or []
+                event_item['remarks'] = reading.remarks
+            if reading.power_test_result is not None:
+                event_item['power_test_result'] = reading.power_test_result
+            state['events'].append(event_item)
             sheet.cell(row, 14, state['status'])
             encoded = json.dumps(state)
             if len(encoded) > 30000:
