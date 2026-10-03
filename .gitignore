@@ -16,3 +16,7 @@ __pycache__/
 .venv-*/
 audit-runtime/
 phone-setup/
+emulator-data/
+*-service-account.json
+serviceAccountKey.json
+*.traineddata

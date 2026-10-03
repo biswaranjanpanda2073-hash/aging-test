@@ -1,6 +1,6 @@
-import { createClient } from '@supabase/supabase-js';
-
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || 'https://nufzfmkplcspwhwnarbc.supabase.co';
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im51ZnpmbWtwbGNzcHdod25hcmJjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA4NDU1OTIsImV4cCI6MjEwNjQyMTU5Mn0.3gZJWDJwGy7QVirYaiW_erpXlsx2TohKrqRieLqT9c8';
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+﻿/**
+ * supabase.ts  -  Supabase has been replaced by Firebase / Cloud Functions.
+ * This file is kept as an empty stub so any accidental import does not break
+ * the TypeScript compiler.  Remove it after verifying no remaining imports.
+ */
+export const supabase = null;

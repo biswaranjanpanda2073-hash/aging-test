@@ -1,0 +1,23 @@
+{
+  "name": "aging-test-root",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Aging-Test monorepo: React frontend + Firebase Cloud Functions backend",
+  "scripts": {
+    "build":       "npm run build --prefix frontend",
+    "dev":         "npm run dev --prefix frontend",
+    "test":        "npm run test --prefix frontend",
+    "emulate":     "firebase emulators:start --import=./emulator-data --export-on-exit=./emulator-data",
+    "deploy":      "npm run build && firebase deploy",
+    "deploy:hosting":   "npm run build && firebase deploy --only hosting",
+    "deploy:functions": "firebase deploy --only functions",
+    "deploy:rules":     "firebase deploy --only firestore",
+    "backup:supabase":  "node scripts/backup_supabase.mjs",
+    "import:supabase":  "node scripts/import_from_supabase.mjs",
+    "import:excel":     "node scripts/import_from_excel.mjs",
+    "verify:migration": "node scripts/verify_migration.mjs"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  }
+}

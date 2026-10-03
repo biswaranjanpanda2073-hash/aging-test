@@ -21,13 +21,28 @@ describe('camera',()=>{
 });
 describe('API', () => {
   it('handles unhandled routes', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 404,
+      json: async () => ({ error: 'Unhandled route: /unknown-route' }),
+    }));
     await expect(api('/unknown-route')).rejects.toThrow('Unhandled route: /unknown-route');
   });
   it('provides config settings', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ serial_regex: regex }),
+    }));
     const config = await api<{ serial_regex: string }>('/config');
     expect(config.serial_regex).toBeDefined();
   });
   it('generates capture tokens', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ capture_token: 'cap_1234567890' }),
+    }));
     const cap = await api<{ capture_token: string }>('/captures');
     expect(cap.capture_token).toContain('cap_');
   });

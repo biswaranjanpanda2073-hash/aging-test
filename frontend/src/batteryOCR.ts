@@ -281,8 +281,7 @@ export async function detectBatteryPercentage(
     }
     const timer = setTimeout(() => controller.abort(), 20000);
     try {
-      const backendBase = (import.meta.env.VITE_BACKEND_URL || '').replace(/\/+$/, '');
-      const response = await fetch(`${backendBase}/api/battery-ocr`, {
+      const response = await fetch('/api/battery-ocr', {
         method: 'POST',
         body: form,
         signal: controller.signal,
@@ -412,8 +411,7 @@ export async function recognizeBatteryFromCanvas(
       signal.addEventListener('abort', abortHandler, { once: true });
     }
     const timer = setTimeout(() => controller.abort(), 6000);
-    const backendBase = (import.meta.env.VITE_BACKEND_URL || '').replace(/\/+$/, '');
-    const res = await fetch(`${backendBase}/api/battery-ocr`, {
+    const res = await fetch('/api/battery-ocr', {
       method: 'POST',
       body: form,
       signal: controller.signal,

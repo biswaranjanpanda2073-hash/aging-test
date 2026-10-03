@@ -1,0 +1,23 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Only authenticated operators may read/write devices
+    match /devices/{serial} {
+      allow read, write: if request.auth != null
+                         && request.auth.token.operator == true;
+    }
+
+    // Capture tokens: server creates them (via Admin SDK); client reads own token only
+    match /captures/{token} {
+      allow read: if request.auth != null
+                  && request.auth.token.operator == true;
+      allow write: if false;   // only Cloud Functions may write
+    }
+
+    // Deny everything else
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
