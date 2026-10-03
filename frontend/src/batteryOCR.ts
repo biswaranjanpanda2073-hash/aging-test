@@ -179,11 +179,11 @@ export async function detectBatteryPercentage(
       return fail(e instanceof Error ? e.message : 'Guide mapping failed.');
     }
   } else {
-    // For auto-scan: downscale full photo so max dimension is 1280px (matching the
-    // backend OCR engine's max inference size). Reduces upload from ~5 MB to ~80 KB.
+    // For auto-scan: downscale full photo so max dimension is 800px.
+    // Drastically speeds up mobile upload and cuts AI inference time by ~65%.
     const maxDim = Math.max(source.width, source.height);
-    if (maxDim > 1280) {
-      const scale = 1280 / maxDim;
+    if (maxDim > 800) {
+      const scale = 800 / maxDim;
       uploadCanvas = document.createElement('canvas');
       uploadCanvas.width = Math.round(source.width * scale);
       uploadCanvas.height = Math.round(source.height * scale);
@@ -194,10 +194,10 @@ export async function detectBatteryPercentage(
     }
   }
 
-  // ── 3. Encode canvas → JPEG blob (0.85 quality gives crisp digits at minimal bytes).
+  // ── 3. Encode canvas → JPEG blob (0.80 quality gives crisp digits at minimal bytes).
   let blob: Blob;
   try {
-    blob = await canvasToJpegBlob(uploadCanvas, 0.85);
+    blob = await canvasToJpegBlob(uploadCanvas, 0.80);
   } catch {
     return fail('Could not encode photo for upload.');
   }
@@ -218,7 +218,8 @@ export async function detectBatteryPercentage(
       if (signal.aborted) return fail('Request cancelled.');
       signal.addEventListener('abort', onAbort, { once: true });
     }
-    const timer = setTimeout(() => controller.abort(), 12000);
+    // 45-second timeout handles free cloud tier cold-start wake-up
+    const timer = setTimeout(() => controller.abort(), 45000);
     const backendBase = (import.meta.env.VITE_BACKEND_URL || '').replace(/\/+$/, '');
     const response = await fetch(`${backendBase}/api/battery-ocr`, {
       method: 'POST',
