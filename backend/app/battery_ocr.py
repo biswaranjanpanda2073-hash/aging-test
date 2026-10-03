@@ -12,8 +12,8 @@ import time
 import logging
 from typing import Any
 
-import cv2
-import numpy as np
+import cv2  # type: ignore
+import numpy as np  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ def _init_ocr() -> None:
     """Background thread: create and warm up the RapidOCR instance."""
     global _ocr, _ocr_error
     try:
-        from rapidocr import RapidOCR  # noqa: PLC0415
+        from rapidocr import RapidOCR  # type: ignore  # noqa: PLC0415
 
         engine = RapidOCR()
         # Warm-up: run one dummy inference so ONNX session graph is compiled.

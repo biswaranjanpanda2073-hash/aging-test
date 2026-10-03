@@ -4,7 +4,7 @@ from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from filelock import Timeout
+from filelock import Timeout  # type: ignore
 from . import config
 from .schemas import Capture, Reading, Restart, Device
 from .storage import Store
