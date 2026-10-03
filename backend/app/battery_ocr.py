@@ -156,6 +156,20 @@ _BACKEND_BUDGET_S = 10.0
 _OCR_READY_WAIT_S = 30.0
 
 
+def _detect_screen_roi(img: np.ndarray) -> np.ndarray:
+    """Detect lit display screen area inside dark device casing/bezel."""
+    h, w = img.shape[:2]
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    cnts, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if cnts:
+        c = max(cnts, key=cv2.contourArea)
+        x, y, cw, ch = cv2.boundingRect(c)
+        if cw * ch > (w * h * 0.10) and (cw < w * 0.98 or ch < h * 0.98):
+            return img[y:y+ch, x:x+cw]
+    return img
+
+
 def run_battery_ocr(
     image_bytes: bytes,
     *,
@@ -212,7 +226,7 @@ def run_battery_ocr(
         img = cv2.resize(img, (int(full_w * scale), int(full_h * scale)), interpolation=cv2.INTER_AREA)
         full_h, full_w = img.shape[:2]
 
-    # 3. Build candidate regions (priority: operator crop > top strip > full).
+    # 3. Build candidate regions (priority: operator crop > detected screen status bar > full).
     candidates: list[tuple[np.ndarray, str]] = []
 
     has_crop = (
@@ -235,8 +249,19 @@ def run_battery_ocr(
         # Frame is already a pre-cropped horizontal region from the live scanner guide
         candidates.append((img, "live-crop"))
     else:
-        top_h = max(40, int(full_h * 0.28))
-        candidates.append((img[0:top_h, :], "status-bar-top"))
+        # Automatically detect screen boundaries to discard black device bezels
+        screen = _detect_screen_roi(img)
+        sh, sw = screen.shape[:2]
+
+        # Candidate 1: Real status bar of the screen (top 28%)
+        top_h = max(36, int(sh * 0.28))
+        candidates.append((screen[0:top_h, :], "screen-status-bar"))
+
+        # Candidate 2: Full screen if bezel was cropped
+        if sh < full_h or sw < full_w:
+            candidates.append((screen, "screen-full"))
+
+        # Candidate 3: Full camera image fallback
         candidates.append((img, "full-image"))
 
     # 4. Run inference over bounded candidate * variant matrix.

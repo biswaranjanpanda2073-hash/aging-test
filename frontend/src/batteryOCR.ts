@@ -109,16 +109,35 @@ export async function warmClientWorker(): Promise<any> {
   return _clientWorkerPromise;
 }
 
-/** Extract top status bar where battery indicators live on Android & iOS */
+/** Extract top status bar where battery indicators live, skipping dark device bezels */
 function extractStatusBar(source: HTMLCanvasElement): HTMLCanvasElement {
+  let startY = 0;
+  try {
+    const ctx0 = source.getContext('2d', { willReadFrequently: true });
+    if (ctx0) {
+      const midX = Math.round(source.width / 2);
+      const col = ctx0.getImageData(midX, 0, 1, Math.round(source.height * 0.65)).data;
+      for (let y = 0; y < Math.round(source.height * 0.65); y++) {
+        const i = y * 4;
+        const brightness = (col[i] + col[i + 1] + col[i + 2]) / 3;
+        if (brightness > 45) {
+          startY = y;
+          break;
+        }
+      }
+    }
+  } catch {
+    startY = 0;
+  }
   const c = document.createElement('canvas');
-  const cropH = Math.max(36, Math.round(source.height * 0.28));
+  const availableH = source.height - startY;
+  const cropH = Math.max(36, Math.round(availableH * 0.28));
   const maxW = Math.min(480, source.width);
   const scale = maxW / source.width;
   c.width = maxW;
   c.height = Math.round(cropH * scale);
   const ctx = c.getContext('2d', { willReadFrequently: true })!;
-  ctx.drawImage(source, 0, 0, source.width, cropH, 0, 0, c.width, c.height);
+  ctx.drawImage(source, 0, startY, source.width, cropH, 0, 0, c.width, c.height);
   return c;
 }
 
