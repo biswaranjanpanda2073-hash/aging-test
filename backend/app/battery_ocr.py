@@ -152,8 +152,8 @@ def _prepare_crop(img: np.ndarray) -> list[tuple[np.ndarray, str]]:
 # Public inference function
 # ---------------------------------------------------------------------------
 
-_BACKEND_BUDGET_S = 10.0
-_OCR_READY_WAIT_S = 30.0
+_BACKEND_BUDGET_S = 18.0
+_OCR_READY_WAIT_S = 35.0
 
 
 def _detect_screen_roi(img: np.ndarray) -> np.ndarray:
@@ -183,6 +183,30 @@ def run_battery_ocr(
     Optional crop_ parameters are fractional image coordinates [0..1].
     When provided, only the operator-selected region is scanned.
     """
+    # 1. Wait for engine (only blocks on first-ever request after startup).
+    if not _ocr_ready.wait(timeout=_OCR_READY_WAIT_S):
+        return {
+            "success": False,
+            "battery_percent": None,
+            "confidence": None,
+            "raw_text": None,
+            "method": None,
+            "processing_time_ms": 0.0,
+            "error": "OCR engine is still initialising. Retry in a moment.",
+            "attempts": 0,
+        }
+    if _ocr is None:
+        return {
+            "success": False,
+            "battery_percent": None,
+            "confidence": None,
+            "raw_text": None,
+            "method": None,
+            "processing_time_ms": 0.0,
+            "error": f"OCR engine failed to load: {_ocr_error or 'unknown error'}",
+            "attempts": 0,
+        }
+
     t0 = time.perf_counter()
 
     def elapsed() -> float:
@@ -199,12 +223,6 @@ def run_battery_ocr(
             "error": error,
             "attempts": attempts,
         }
-
-    # 1. Wait for engine (only blocks on first-ever request after startup).
-    if not _ocr_ready.wait(timeout=_OCR_READY_WAIT_S):
-        return fail("OCR engine is still initialising. Retry in a moment.")
-    if _ocr is None:
-        return fail(f"OCR engine failed to load: {_ocr_error or 'unknown error'}")
 
     # 2. Decode image bytes.
     try:
