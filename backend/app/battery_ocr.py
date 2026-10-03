@@ -120,9 +120,8 @@ def _sort_ocr_reading_order(txts: tuple[str, ...], scores: tuple[float, ...], bo
 # Image preprocessing
 # ---------------------------------------------------------------------------
 
-_TARGET_SHORT_SIDE = 96   # min height after resize
-_MAX_LONG_SIDE = 1280     # cap width to bound inference time
-
+_TARGET_SHORT_SIDE = 48   # min height after resize
+_MAX_LONG_SIDE = 480     # cap width to 480px for sub-second neural inference
 
 def _prepare_crop(img: np.ndarray) -> list[tuple[np.ndarray, str]]:
     """Return at most 2 preprocessed variants: original and contrast-enhanced."""
@@ -135,7 +134,7 @@ def _prepare_crop(img: np.ndarray) -> list[tuple[np.ndarray, str]]:
     if scale != 1.0:
         new_w = max(1, round(w * scale))
         new_h = max(1, round(h * scale))
-        img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LANCZOS4)
+        img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
     variants: list[tuple[np.ndarray, str]] = [
         (img, "original"),
@@ -153,9 +152,8 @@ def _prepare_crop(img: np.ndarray) -> list[tuple[np.ndarray, str]]:
 # Public inference function
 # ---------------------------------------------------------------------------
 
-# Frontend 5 s deadline; allow backend 3.5 s so the round-trip fits.
-_BACKEND_BUDGET_S = 3.5
-_OCR_READY_WAIT_S = 8.0
+_BACKEND_BUDGET_S = 10.0
+_OCR_READY_WAIT_S = 30.0
 
 
 def run_battery_ocr(
@@ -207,6 +205,13 @@ def run_battery_ocr(
     if full_h == 0 or full_w == 0:
         return fail("Image has zero dimension.")
 
+    # Downscale large input to max 640px for near-instant tensor allocation
+    max_dim = max(full_h, full_w)
+    if max_dim > 640:
+        scale = 640.0 / max_dim
+        img = cv2.resize(img, (int(full_w * scale), int(full_h * scale)), interpolation=cv2.INTER_AREA)
+        full_h, full_w = img.shape[:2]
+
     # 3. Build candidate regions (priority: operator crop > top strip > full).
     candidates: list[tuple[np.ndarray, str]] = []
 
@@ -230,7 +235,7 @@ def run_battery_ocr(
         # Frame is already a pre-cropped horizontal region from the live scanner guide
         candidates.append((img, "live-crop"))
     else:
-        top_h = max(40, int(full_h * 0.25))
+        top_h = max(40, int(full_h * 0.28))
         candidates.append((img[0:top_h, :], "status-bar-top"))
         candidates.append((img, "full-image"))
 
@@ -248,7 +253,7 @@ def run_battery_ocr(
 
             method_tag = f"{region_name}-{variant_name}"
             try:
-                result = _ocr(variant_img)
+                result = _ocr(variant_img, use_det=True, use_cls=False, use_rec=True)
                 attempts += 1
             except Exception as exc:
                 logger.warning("Inference error (%s): %s", method_tag, exc)

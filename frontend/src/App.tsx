@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { api, submit, ApiError } from './api';
 import { Scanner } from './Scanner';
 import { parseQRSerial } from './qr';
-import { detectBatteryPercentage } from './batteryOCR';
+import { detectBatteryPercentage, warmClientWorker } from './batteryOCR';
 import type { Action, Device, Reading, IssueCategory, PowerTestResult } from './types';
 
 const modules = [
@@ -90,6 +90,8 @@ export default function App() {
   const [currentTime, setCurrentTime] = useState(Date.now());
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(Date.now()), 1000);
+    // Pre-warm client Tesseract WebAssembly worker in the background for instant scans
+    void warmClientWorker();
     return () => clearInterval(timer);
   }, []);
 
