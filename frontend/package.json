@@ -16,6 +16,7 @@
     "check:setup": "node scripts/check-setup.mjs"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.117.2",
     "@zxing/library": "^0.23.0",
     "jsqr": "1.4.0",
     "react": "^19.0.0",

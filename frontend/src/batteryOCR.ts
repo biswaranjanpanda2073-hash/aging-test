@@ -17,6 +17,7 @@
  */
 
 import { loadPhoto, mapGuide, cropPhoto, type Photo, type Rect } from './photo';
+import { newWorker } from './ocr';
 
 // ── Re-exported types so callers need not change their import surface ─────────
 
@@ -78,6 +79,42 @@ function canvasToJpegBlob(c: HTMLCanvasElement, quality = 0.88): Promise<Blob> {
       quality,
     );
   });
+}
+
+/**
+ * Fallback browser-side OCR using Tesseract.js when the backend OCR endpoint
+ * is unreachable (e.g. static Firebase Hosting serverless mode).
+ */
+async function clientTesseractOCR(
+  canvas: HTMLCanvasElement,
+  signal?: AbortSignal
+): Promise<{ success: boolean; batteryPercent?: number; confidence?: number; raw?: string }> {
+  if (typeof window === 'undefined' || typeof Worker === 'undefined') {
+    return { success: false };
+  }
+  try {
+    if (signal?.aborted) return { success: false };
+    const worker = await newWorker(() => {});
+    if (signal?.aborted) {
+      await worker.terminate();
+      return { success: false };
+    }
+    const res = await worker.recognize(canvas);
+    await worker.terminate();
+
+    const raw = (res?.data?.text || '').trim();
+    const pct = parseBatteryPercentage(raw);
+    if (pct !== null) {
+      return { success: true, batteryPercent: pct, confidence: res.data.confidence, raw };
+    }
+    const m = raw.match(/\b(100|[0-9]{1,2})\s*%/);
+    if (m) {
+      return { success: true, batteryPercent: Number(m[1]), confidence: res.data.confidence, raw };
+    }
+    return { success: false, raw };
+  } catch {
+    return { success: false };
+  }
 }
 
 // ── Main exported function ────────────────────────────────────────────────────
@@ -181,8 +218,9 @@ export async function detectBatteryPercentage(
       if (signal.aborted) return fail('Request cancelled.');
       signal.addEventListener('abort', onAbort, { once: true });
     }
-    const timer = setTimeout(() => controller.abort(), 8000);
-    const response = await fetch('/api/battery-ocr', {
+    const timer = setTimeout(() => controller.abort(), 12000);
+    const backendBase = (import.meta.env.VITE_BACKEND_URL || '').replace(/\/+$/, '');
+    const response = await fetch(`${backendBase}/api/battery-ocr`, {
       method: 'POST',
       body: form,
       signal: controller.signal,
@@ -191,17 +229,68 @@ export async function detectBatteryPercentage(
     clearTimeout(timer);
     if (signal) signal.removeEventListener('abort', onAbort);
     if (!response.ok) {
+      if (response.status === 404 || response.status === 502 || response.status === 503) {
+        const fb = await clientTesseractOCR(uploadCanvas, signal);
+        if (fb.success && fb.batteryPercent !== undefined) {
+          return {
+            success: true,
+            batteryPercent: fb.batteryPercent,
+            confidence: fb.confidence,
+            method: 'client-tesseract',
+            processingTime: processingTime(),
+            rawText: fb.raw,
+            attempts: 1,
+            trace: [],
+            region: guide,
+          };
+        }
+      }
       const body = await response.json().catch(() => null) as { detail?: string } | null;
       const msg = typeof body?.detail === 'string' ? body.detail : `Server error ${response.status}`;
       return fail(msg);
     }
-    json = await response.json();
+    const resText = await response.text();
+    try {
+      json = JSON.parse(resText);
+    } catch {
+      // Server returned HTML (e.g. static host rewrite). Fall back to client Tesseract.
+      const fb = await clientTesseractOCR(uploadCanvas, signal);
+      if (fb.success && fb.batteryPercent !== undefined) {
+        return {
+          success: true,
+          batteryPercent: fb.batteryPercent,
+          confidence: fb.confidence,
+          method: 'client-tesseract',
+          processingTime: processingTime(),
+          rawText: fb.raw,
+          attempts: 1,
+          trace: [],
+          region: guide,
+        };
+      }
+      return fail('Could not read battery. Retake photo or enter percentage manually.');
+    }
   } catch (e) {
     if (e instanceof DOMException && e.name === 'AbortError') {
       if (signal?.aborted) return fail('Request cancelled.');
       return fail('OCR timed out. Retake photo with the battery digits centered in focus.');
     }
-    return fail('Server connection failed. Check the laptop connection.');
+    // Network / backend offline (e.g. Firebase Hosting serverless mode)
+    const fb = await clientTesseractOCR(uploadCanvas, signal);
+    if (fb.success && fb.batteryPercent !== undefined) {
+      return {
+        success: true,
+        batteryPercent: fb.batteryPercent,
+        confidence: fb.confidence,
+        method: 'client-tesseract',
+        processingTime: processingTime(),
+        rawText: fb.raw,
+        attempts: 1,
+        trace: [],
+        region: guide,
+      };
+    }
+    return fail('Could not read battery. Drag a green box over the digits to retry.');
   }
 
   // ── 5. Interpret backend response.
@@ -271,9 +360,9 @@ export async function recognizeBatteryFromCanvas(
       if (signal.aborted) return { success: false, error: 'Cancelled' };
       signal.addEventListener('abort', abortHandler, { once: true });
     }
-    const timer = setTimeout(() => controller.abort(), 4000);
-
-    const res = await fetch('/api/battery-ocr', {
+    const timer = setTimeout(() => controller.abort(), 6000);
+    const backendBase = (import.meta.env.VITE_BACKEND_URL || '').replace(/\/+$/, '');
+    const res = await fetch(`${backendBase}/api/battery-ocr`, {
       method: 'POST',
       body: form,
       signal: controller.signal,
@@ -283,6 +372,16 @@ export async function recognizeBatteryFromCanvas(
     if (signal) signal.removeEventListener('abort', abortHandler);
 
     if (!res.ok) {
+      if (res.status === 404 || res.status === 502 || res.status === 503) {
+        const fb = await clientTesseractOCR(canvas, signal);
+        if (fb.success && fb.batteryPercent !== undefined) {
+          return {
+            success: true,
+            batteryPercent: fb.batteryPercent,
+            confidence: fb.confidence,
+          };
+        }
+      }
       const body = await res.json().catch(() => null) as { detail?: string } | null;
       return { success: false, error: body?.detail || `Server error ${res.status}` };
     }
@@ -305,6 +404,14 @@ export async function recognizeBatteryFromCanvas(
   } catch (err) {
     if (err instanceof DOMException && err.name === 'AbortError') {
       return { success: false, error: 'Request aborted' };
+    }
+    const fb = await clientTesseractOCR(canvas, signal);
+    if (fb.success && fb.batteryPercent !== undefined) {
+      return {
+        success: true,
+        batteryPercent: fb.batteryPercent,
+        confidence: fb.confidence,
+      };
     }
     return { success: false, error: 'Connection error during OCR' };
   }

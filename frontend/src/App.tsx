@@ -39,11 +39,15 @@ export default function App() {
   const [regRegistered, setRegRegistered] = useState<Device | null>(null);
   const [regManual, setRegManual] = useState(false);
   const [regManualInput, setRegManualInput] = useState('');
+  const [regBatteryManual, setRegBatteryManual] = useState(false);
+  const [regBatteryManualInput, setRegBatteryManualInput] = useState('');
 
   // Stage 02 (Aging Test) battery photo capture state
   const [cpAction, setCpAction] = useState<Action>('h1');
   const [cpBatteryProcessing, setCpBatteryProcessing] = useState(false);
   const [cpBatteryError, setCpBatteryError] = useState<string | null>(null);
+  const [cpBatteryManual, setCpBatteryManual] = useState(false);
+  const [cpBatteryManualInput, setCpBatteryManualInput] = useState('');
 
   // Stage 02 (Aging Test) issue observation state for review screen
   const [cpHasIssue, setCpHasIssue] = useState<'yes' | 'no' | null>(null);
@@ -61,6 +65,8 @@ export default function App() {
   const [postScanningQR, setPostScanningQR] = useState(false);
   const [postBatteryProcessing, setPostBatteryProcessing] = useState(false);
   const [postBatteryError, setPostBatteryError] = useState<string | null>(null);
+  const [postBatteryManual, setPostBatteryManual] = useState(false);
+  const [postBatteryManualInput, setPostBatteryManualInput] = useState('');
   const [postConfirmed, setPostConfirmed] = useState<Device | null>(null);
   const [postManual, setPostManual] = useState(false);
   const [postManualInput, setPostManualInput] = useState('');
@@ -193,6 +199,8 @@ export default function App() {
     setRegRegistered(null);
     setRegManual(false);
     setRegManualInput('');
+    setRegBatteryManual(false);
+    setRegBatteryManualInput('');
     setRegScanningQR(false);
     setRegBatteryProcessing(false);
     setRegBatteryError(null);
@@ -211,6 +219,8 @@ export default function App() {
     setPostConfirmed(null);
     setPostManual(false);
     setPostManualInput('');
+    setPostBatteryManual(false);
+    setPostBatteryManualInput('');
     setPostScanningQR(false);
     setPostBatteryProcessing(false);
     setPostBatteryError(null);
@@ -231,6 +241,8 @@ export default function App() {
     setReading(null);
     setCpBatteryProcessing(false);
     setCpBatteryError(null);
+    setCpBatteryManual(false);
+    setCpBatteryManualInput('');
     setLookupScanningQR(false);
     setSerial('');
     setLookupPhase('scan');
@@ -239,6 +251,60 @@ export default function App() {
     setCpRemarks('');
     setError('');
     setMessage('');
+  };
+
+  const handleManualBatterySubmit = async (stage: 'reg' | 'cp' | 'post', valStr: string) => {
+    const pct = parseInt(valStr.trim(), 10);
+    if (isNaN(pct) || pct < 0 || pct > 100) {
+      setError('Please enter a valid battery percentage between 0 and 100.');
+      return;
+    }
+    if (stage === 'post' && pct < 70) {
+      setError('Post-aging packing battery must be at least 70%.');
+      return;
+    }
+    try {
+      const capData = await api<{ capture_token: string }>('/captures', {
+        action: stage === 'reg' ? 'register' : stage === 'post' ? 'post-aging' : cpAction,
+        serial_number: (stage === 'reg' ? regSerial : stage === 'post' ? postSerial : device?.serial_number) || undefined,
+      });
+      const token = capData.capture_token;
+
+      if (stage === 'reg') {
+        setRegBattery(pct);
+        setRegToken(token);
+        setRegBatteryError(null);
+        setRegBatteryManual(false);
+        setRegBatteryManualInput('');
+      } else if (stage === 'cp') {
+        setReading({
+          serial_number: device?.serial_number || '',
+          battery_percent: pct,
+          device_timestamp: null,
+          capture_token: token,
+        });
+        setAction(cpAction);
+        setCpHasIssue(null);
+        setCpCategories({ display: false, crashing: false, other: false });
+        setCpRemarks('');
+        setCpBatteryError(null);
+        setCpBatteryManual(false);
+        setCpBatteryManualInput('');
+      } else if (stage === 'post') {
+        setPostBattery(pct);
+        setPostToken(token);
+        setPostHasIssue(null);
+        setPostCategories({ display: false, crashing: false, other: false });
+        setPostRemarks('');
+        setPostPowerTest(null);
+        setPostBatteryError(null);
+        setPostBatteryManual(false);
+        setPostBatteryManualInput('');
+      }
+      setError('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not set manual battery percentage.');
+    }
   };
 
   const navigate = (index: number | null) => {
@@ -882,26 +948,78 @@ export default function App() {
                             <strong>Reading battery percentage…</strong>
                             <p style={{ margin: '6px 0 0', fontSize: 13, color: '#3f674f' }}>Processing captured photo</p>
                           </div>
+                        ) : regBatteryManual ? (
+                          <form
+                            className="lookup"
+                            style={{ marginTop: 10 }}
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              void handleManualBatterySubmit('reg', regBatteryManualInput);
+                            }}
+                          >
+                            <label htmlFor="manual-reg-battery">Enter Battery Percentage (0–100%)</label>
+                            <div>
+                              <input
+                                id="manual-reg-battery"
+                                type="number"
+                                min="0"
+                                max="100"
+                                value={regBatteryManualInput}
+                                onChange={(e) => setRegBatteryManualInput(e.target.value)}
+                                placeholder="e.g. 100"
+                                required
+                              />
+                              <button type="submit" disabled={busy}>Use Battery</button>
+                            </div>
+                            <button
+                              type="button"
+                              className="text-button"
+                              style={{ marginTop: 8 }}
+                              onClick={() => { setRegBatteryManual(false); setRegBatteryError(null); }}
+                            >
+                              ← Back to camera scan
+                            </button>
+                          </form>
                         ) : regBatteryError ? (
                           <div className="battery-error-card">
                             <p>⚠ {regBatteryError}</p>
-                            <button
-                              type="button"
-                              className="btn-retake"
-                              onClick={triggerRegBatteryScan}
-                            >
-                              📷 Retake Photo
-                            </button>
+                            <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+                              <button
+                                type="button"
+                                className="btn-retake"
+                                onClick={triggerRegBatteryScan}
+                              >
+                                📷 Retake Photo
+                              </button>
+                              <button
+                                type="button"
+                                className="secondary"
+                                style={{ minHeight: 38, padding: '8px 14px', fontSize: 13 }}
+                                onClick={() => { setRegBatteryManual(true); setError(''); }}
+                              >
+                                ⌨ Enter Manually
+                              </button>
+                            </div>
                           </div>
                         ) : regBattery === null ? (
-                          <button
-                            type="button"
-                            className="scan-btn-primary"
-                            disabled={busy || !connected}
-                            onClick={triggerRegBatteryScan}
-                          >
-                            ⚡ Battery Scan
-                          </button>
+                          <div>
+                            <button
+                              type="button"
+                              className="scan-btn-primary"
+                              disabled={busy || !connected}
+                              onClick={triggerRegBatteryScan}
+                            >
+                              ⚡ Battery Scan
+                            </button>
+                            <button
+                              type="button"
+                              className="text-button"
+                              style={{ marginTop: 10, width: '100%' }}
+                              onClick={() => { setRegBatteryManual(true); setError(''); }}
+                            >
+                              Enter battery percentage manually instead
+                            </button>
+                          </div>
                         ) : (
                           /* Scanned battery display */
                           <div className="scanned-value-box">
@@ -1053,10 +1171,44 @@ export default function App() {
                         Processing captured photo for {cpAction.toUpperCase()} checkpoint
                       </p>
                     </div>
+                  ) : cpBatteryManual ? (
+                    <div style={{ maxWidth: 480, margin: '20px auto', background: '#ffffff', border: '1px solid #dbe5d6', borderRadius: 12, padding: 20 }}>
+                      <form
+                        className="lookup"
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          void handleManualBatterySubmit('cp', cpBatteryManualInput);
+                        }}
+                      >
+                        <h4 style={{ margin: '0 0 10px' }}>Enter {cpAction.toUpperCase()} Battery Level</h4>
+                        <label htmlFor="manual-cp-battery">Battery Percentage (0–100%)</label>
+                        <div>
+                          <input
+                            id="manual-cp-battery"
+                            type="number"
+                            min="0"
+                            max="100"
+                            value={cpBatteryManualInput}
+                            onChange={(e) => setCpBatteryManualInput(e.target.value)}
+                            placeholder="e.g. 85"
+                            required
+                          />
+                          <button type="submit" disabled={busy}>Use Battery</button>
+                        </div>
+                        <button
+                          type="button"
+                          className="text-button"
+                          style={{ marginTop: 8 }}
+                          onClick={() => { setCpBatteryManual(false); setCpBatteryError(null); }}
+                        >
+                          ← Cancel
+                        </button>
+                      </form>
+                    </div>
                   ) : cpBatteryError ? (
                     <div className="battery-error-card" style={{ maxWidth: 480, margin: '20px auto' }}>
                       <p>⚠ {cpBatteryError}</p>
-                      <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
+                      <div style={{ display: 'flex', gap: 10, justifyContent: 'center', flexWrap: 'wrap' }}>
                         <button
                           type="button"
                           className="btn-retake"
@@ -1070,6 +1222,14 @@ export default function App() {
                         <button
                           type="button"
                           className="secondary"
+                          style={{ minHeight: 38, padding: '8px 14px', fontSize: 13 }}
+                          onClick={() => { setCpBatteryManual(true); setError(''); }}
+                        >
+                          ⌨ Enter Manually
+                        </button>
+                        <button
+                          type="button"
+                          className="text-button"
                           onClick={() => setCpBatteryError(null)}
                         >
                           Cancel
@@ -1750,26 +1910,78 @@ export default function App() {
                             <strong>Reading battery percentage…</strong>
                             <p style={{ margin: '6px 0 0', fontSize: 13, color: '#3f674f' }}>Processing captured photo</p>
                           </div>
+                        ) : postBatteryManual ? (
+                          <form
+                            className="lookup"
+                            style={{ marginTop: 10 }}
+                            onSubmit={(e) => {
+                              e.preventDefault();
+                              void handleManualBatterySubmit('post', postBatteryManualInput);
+                            }}
+                          >
+                            <label htmlFor="manual-post-battery">Enter Battery Percentage (70–100%)</label>
+                            <div>
+                              <input
+                                id="manual-post-battery"
+                                type="number"
+                                min="70"
+                                max="100"
+                                value={postBatteryManualInput}
+                                onChange={(e) => setPostBatteryManualInput(e.target.value)}
+                                placeholder="e.g. 95"
+                                required
+                              />
+                              <button type="submit" disabled={busy}>Use Battery</button>
+                            </div>
+                            <button
+                              type="button"
+                              className="text-button"
+                              style={{ marginTop: 8 }}
+                              onClick={() => { setPostBatteryManual(false); setPostBatteryError(null); }}
+                            >
+                              ← Back to camera scan
+                            </button>
+                          </form>
                         ) : postBatteryError ? (
                           <div className="battery-error-card">
                             <p>⚠ {postBatteryError}</p>
-                            <button
-                              type="button"
-                              className="btn-retake"
-                              onClick={triggerPostBatteryScan}
-                            >
-                              📷 Retake Photo
-                            </button>
+                            <div style={{ display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+                              <button
+                                type="button"
+                                className="btn-retake"
+                                onClick={triggerPostBatteryScan}
+                              >
+                                📷 Retake Photo
+                              </button>
+                              <button
+                                type="button"
+                                className="secondary"
+                                style={{ minHeight: 38, padding: '8px 14px', fontSize: 13 }}
+                                onClick={() => { setPostBatteryManual(true); setError(''); }}
+                              >
+                                ⌨ Enter Manually
+                              </button>
+                            </div>
                           </div>
                         ) : postBattery === null ? (
-                          <button
-                            type="button"
-                            className="scan-btn-primary"
-                            disabled={busy || !connected}
-                            onClick={triggerPostBatteryScan}
-                          >
-                            ⚡ Battery Scan (Packing)
-                          </button>
+                          <div>
+                            <button
+                              type="button"
+                              className="scan-btn-primary"
+                              disabled={busy || !connected}
+                              onClick={triggerPostBatteryScan}
+                            >
+                              ⚡ Battery Scan (Packing)
+                            </button>
+                            <button
+                              type="button"
+                              className="text-button"
+                              style={{ marginTop: 10, width: '100%' }}
+                              onClick={() => { setPostBatteryManual(true); setError(''); }}
+                            >
+                              Enter battery percentage manually instead
+                            </button>
+                          </div>
                         ) : (
                           /* Scanned battery display */
                           <div className="scanned-value-box">
