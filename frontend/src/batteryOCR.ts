@@ -132,11 +132,13 @@ function extractStatusBar(source: HTMLCanvasElement): HTMLCanvasElement {
   const c = document.createElement('canvas');
   const availableH = source.height - startY;
   const cropH = Math.max(36, Math.round(availableH * 0.28));
-  const maxW = Math.min(480, source.width);
-  const scale = maxW / source.width;
-  c.width = maxW;
+  // Scale up 2x so small digits (like 37%) become large and sharp for instant Tesseract detection
+  const scale = 2.0;
+  c.width = Math.round(source.width * scale);
   c.height = Math.round(cropH * scale);
   const ctx = c.getContext('2d', { willReadFrequently: true })!;
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
   ctx.drawImage(source, 0, startY, source.width, cropH, 0, 0, c.width, c.height);
   return c;
 }
