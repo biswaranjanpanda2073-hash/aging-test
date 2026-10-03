@@ -12,8 +12,8 @@ import time
 import logging
 from typing import Any
 
-import cv2
-import numpy as np
+import cv2  # type: ignore
+import numpy as np  # type: ignore
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +30,7 @@ def _init_ocr() -> None:
     """Background thread: create and warm up the RapidOCR instance."""
     global _ocr, _ocr_error
     try:
-        from rapidocr import RapidOCR  # noqa: PLC0415
+        from rapidocr import RapidOCR  # type: ignore  # noqa: PLC0415
 
         engine = RapidOCR()
         # Warm-up: run one dummy inference so ONNX session graph is compiled.
@@ -120,9 +120,8 @@ def _sort_ocr_reading_order(txts: tuple[str, ...], scores: tuple[float, ...], bo
 # Image preprocessing
 # ---------------------------------------------------------------------------
 
-_TARGET_SHORT_SIDE = 96   # min height after resize
-_MAX_LONG_SIDE = 1280     # cap width to bound inference time
-
+_TARGET_SHORT_SIDE = 48   # min height after resize
+_MAX_LONG_SIDE = 480     # cap width to 480px for sub-second neural inference
 
 def _prepare_crop(img: np.ndarray) -> list[tuple[np.ndarray, str]]:
     """Return at most 2 preprocessed variants: original and contrast-enhanced."""
@@ -135,7 +134,7 @@ def _prepare_crop(img: np.ndarray) -> list[tuple[np.ndarray, str]]:
     if scale != 1.0:
         new_w = max(1, round(w * scale))
         new_h = max(1, round(h * scale))
-        img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LANCZOS4)
+        img = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
     variants: list[tuple[np.ndarray, str]] = [
         (img, "original"),
@@ -153,9 +152,22 @@ def _prepare_crop(img: np.ndarray) -> list[tuple[np.ndarray, str]]:
 # Public inference function
 # ---------------------------------------------------------------------------
 
-# Frontend 5 s deadline; allow backend 3.5 s so the round-trip fits.
-_BACKEND_BUDGET_S = 3.5
-_OCR_READY_WAIT_S = 8.0
+_BACKEND_BUDGET_S = 18.0
+_OCR_READY_WAIT_S = 35.0
+
+
+def _detect_screen_roi(img: np.ndarray) -> np.ndarray:
+    """Detect lit display screen area inside dark device casing/bezel."""
+    h, w = img.shape[:2]
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    _, thresh = cv2.threshold(gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+    cnts, _ = cv2.findContours(thresh, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if cnts:
+        c = max(cnts, key=cv2.contourArea)
+        x, y, cw, ch = cv2.boundingRect(c)
+        if cw * ch > (w * h * 0.10) and (cw < w * 0.98 or ch < h * 0.98):
+            return img[y:y+ch, x:x+cw]
+    return img
 
 
 def run_battery_ocr(
@@ -171,6 +183,30 @@ def run_battery_ocr(
     Optional crop_ parameters are fractional image coordinates [0..1].
     When provided, only the operator-selected region is scanned.
     """
+    # 1. Wait for engine (only blocks on first-ever request after startup).
+    if not _ocr_ready.wait(timeout=_OCR_READY_WAIT_S):
+        return {
+            "success": False,
+            "battery_percent": None,
+            "confidence": None,
+            "raw_text": None,
+            "method": None,
+            "processing_time_ms": 0.0,
+            "error": "OCR engine is still initialising. Retry in a moment.",
+            "attempts": 0,
+        }
+    if _ocr is None:
+        return {
+            "success": False,
+            "battery_percent": None,
+            "confidence": None,
+            "raw_text": None,
+            "method": None,
+            "processing_time_ms": 0.0,
+            "error": f"OCR engine failed to load: {_ocr_error or 'unknown error'}",
+            "attempts": 0,
+        }
+
     t0 = time.perf_counter()
 
     def elapsed() -> float:
@@ -188,12 +224,6 @@ def run_battery_ocr(
             "attempts": attempts,
         }
 
-    # 1. Wait for engine (only blocks on first-ever request after startup).
-    if not _ocr_ready.wait(timeout=_OCR_READY_WAIT_S):
-        return fail("OCR engine is still initialising. Retry in a moment.")
-    if _ocr is None:
-        return fail(f"OCR engine failed to load: {_ocr_error or 'unknown error'}")
-
     # 2. Decode image bytes.
     try:
         arr = np.frombuffer(image_bytes, dtype=np.uint8)
@@ -207,7 +237,14 @@ def run_battery_ocr(
     if full_h == 0 or full_w == 0:
         return fail("Image has zero dimension.")
 
-    # 3. Build candidate regions (priority: operator crop > top strip > full).
+    # Downscale large input to max 640px for near-instant tensor allocation
+    max_dim = max(full_h, full_w)
+    if max_dim > 640:
+        scale = 640.0 / max_dim
+        img = cv2.resize(img, (int(full_w * scale), int(full_h * scale)), interpolation=cv2.INTER_AREA)
+        full_h, full_w = img.shape[:2]
+
+    # 3. Build candidate regions (priority: operator crop > detected screen status bar > full).
     candidates: list[tuple[np.ndarray, str]] = []
 
     has_crop = (
@@ -230,8 +267,19 @@ def run_battery_ocr(
         # Frame is already a pre-cropped horizontal region from the live scanner guide
         candidates.append((img, "live-crop"))
     else:
-        top_h = max(40, int(full_h * 0.25))
-        candidates.append((img[0:top_h, :], "status-bar-top"))
+        # Automatically detect screen boundaries to discard black device bezels
+        screen = _detect_screen_roi(img)
+        sh, sw = screen.shape[:2]
+
+        # Candidate 1: Real status bar of the screen (top 28%)
+        top_h = max(36, int(sh * 0.28))
+        candidates.append((screen[0:top_h, :], "screen-status-bar"))
+
+        # Candidate 2: Full screen if bezel was cropped
+        if sh < full_h or sw < full_w:
+            candidates.append((screen, "screen-full"))
+
+        # Candidate 3: Full camera image fallback
         candidates.append((img, "full-image"))
 
     # 4. Run inference over bounded candidate * variant matrix.
@@ -248,7 +296,7 @@ def run_battery_ocr(
 
             method_tag = f"{region_name}-{variant_name}"
             try:
-                result = _ocr(variant_img)
+                result = _ocr(variant_img, use_det=True, use_cls=False, use_rec=True)
                 attempts += 1
             except Exception as exc:
                 logger.warning("Inference error (%s): %s", method_tag, exc)

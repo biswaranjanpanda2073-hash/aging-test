@@ -1,8 +1,10 @@
+import os
 from zipfile import BadZipFile
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from filelock import Timeout
+from filelock import Timeout  # type: ignore
 from . import config
 from .schemas import Capture, Reading, Restart, Device
 from .storage import Store
@@ -108,7 +110,16 @@ def create_app(path=config.FILE, interval=config.CHECKPOINT_SECONDS, hosts=None,
             raise HTTPException(404, 'Unknown action.')
         return workflow.reading(action, reading, serial)
 
-    app.add_middleware(SecurityGuard, hosts=hosts or config.ALLOWED_HOSTS, origins=origins or config.ALLOWED_ORIGINS, limit=rate_limit)
+    active_origins = origins or config.ALLOWED_ORIGINS
+    if os.getenv('RENDER') or os.getenv('ENVIRONMENT') == 'production' or os.getenv('ENABLE_CORS'):
+        app.add_middleware(
+            CORSMiddleware,
+            allow_origins=['*'] if '*' in active_origins else active_origins,
+            allow_credentials=True,
+            allow_methods=['*'],
+            allow_headers=['*'],
+        )
+    app.add_middleware(SecurityGuard, hosts=hosts or config.ALLOWED_HOSTS, origins=active_origins, limit=rate_limit)
     return app
 
 app = create_app()

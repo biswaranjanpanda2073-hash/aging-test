@@ -1,0 +1,11 @@
+{
+  "typeCheckingMode": "off",
+  "venvPath": "backend",
+  "venv": ".venv",
+  "extraPaths": [
+    "backend",
+    "backend/.venv/Lib/site-packages"
+  ],
+  "reportMissingImports": "none",
+  "reportMissingModuleSource": "none"
+}

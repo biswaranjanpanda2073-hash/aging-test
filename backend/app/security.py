@@ -40,11 +40,12 @@ class SecurityGuard:
             host = urlsplit('http://' + headers.get(b'host', b'').decode('ascii')).hostname
         except (ValueError, UnicodeDecodeError):
             host = None
-        if host not in self.hosts:
+        if '*' not in self.hosts and host not in self.hosts:
             return await reject(400, 'Unrecognized server address.')
         origin = headers.get(b'origin', b'').decode('latin1')
-        if (origin and origin not in self.origins) or headers.get(b'sec-fetch-site') == b'cross-site':
-            return await reject(403, 'Cross-site requests are not permitted.')
+        if '*' not in self.origins:
+            if (origin and origin not in self.origins) or headers.get(b'sec-fetch-site') == b'cross-site':
+                return await reject(403, 'Cross-site requests are not permitted.')
         current = time.monotonic()
         while self.requests and self.requests[0] < current - 60:
             self.requests.popleft()
