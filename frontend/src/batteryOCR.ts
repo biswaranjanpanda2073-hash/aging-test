@@ -69,10 +69,27 @@ export function mapGuideToImageCoords(
 }
 
 /**
- * Convert a canvas to a JPEG Blob for upload.
- * Quality 0.75 and smaller dimensions keep upload payload under 25 KB for 30ms transmission.
+ * Resize a canvas so its longer dimension does not exceed maxLongSide.
  */
-function canvasToJpegBlob(c: HTMLCanvasElement, quality = 0.75): Promise<Blob> {
+function limitCanvasLongSide(canvas: HTMLCanvasElement, maxLongSide = 1280): HTMLCanvasElement {
+  const maxDim = Math.max(canvas.width, canvas.height);
+  if (maxDim <= maxLongSide) {
+    return canvas;
+  }
+  const scale = maxLongSide / maxDim;
+  const resized = document.createElement('canvas');
+  resized.width = Math.max(1, Math.round(canvas.width * scale));
+  resized.height = Math.max(1, Math.round(canvas.height * scale));
+  const ctx = resized.getContext('2d')!;
+  ctx.drawImage(canvas, 0, 0, resized.width, resized.height);
+  return resized;
+}
+
+/**
+ * Convert a canvas to a JPEG Blob for upload.
+ * Default quality 0.85 targets ~100-300 KB payloads for crisp OCR characters.
+ */
+function canvasToJpegBlob(c: HTMLCanvasElement, quality = 0.85): Promise<Blob> {
   return new Promise((resolve, reject) => {
     c.toBlob(
       (blob) => (blob ? resolve(blob) : reject(new Error('Canvas toBlob returned null'))),
@@ -211,39 +228,31 @@ export async function detectBatteryPercentage(
     return fail(e instanceof Error ? e.message : 'Could not load photo.');
   }
 
-  // ── 2. Prepare optimized canvas for upload (drastically cuts payload for weak Wi-Fi).
+  // ── 2. Prepare optimized canvas for upload (capped at 1280px long side).
   let uploadCanvas: HTMLCanvasElement;
+  // Fix 5: crop fractions are only meaningful when the full frame is uploaded.
+  // When mode='guide', the canvas IS the crop — do not also send fractions.
   let cropX: number | undefined;
   let cropY: number | undefined;
   let cropW: number | undefined;
   let cropH: number | undefined;
+  let mode: 'guide' | 'photo' = 'photo';
 
   if (guide) {
     try {
       const imgRect: Rect = display
         ? mapGuideToImageCoords(guide, display, source)
         : guide;
-      uploadCanvas = cropPhoto(source, imgRect);
-      cropX = 0;
-      cropY = 0;
-      cropW = 1;
-      cropH = 1;
+      const cropped = cropPhoto(source, imgRect);
+      uploadCanvas = limitCanvasLongSide(cropped, 1280);
+      // Fix 5: do NOT set cropX/Y/W/H — the upload is already the guide crop.
+      mode = 'guide';
     } catch (e) {
       return fail(e instanceof Error ? e.message : 'Guide mapping failed.');
     }
   } else {
-    // Downscale photo so max dimension is 480px: cuts payload to ~20 KB and speeds up neural network 5x.
-    const maxDim = Math.max(source.width, source.height);
-    if (maxDim > 480) {
-      const scale = 480 / maxDim;
-      uploadCanvas = document.createElement('canvas');
-      uploadCanvas.width = Math.round(source.width * scale);
-      uploadCanvas.height = Math.round(source.height * scale);
-      const ctx = uploadCanvas.getContext('2d')!;
-      ctx.drawImage(source, 0, 0, uploadCanvas.width, uploadCanvas.height);
-    } else {
-      uploadCanvas = source;
-    }
+    uploadCanvas = limitCanvasLongSide(source, 1280);
+    mode = 'photo';
   }
 
   // ── 3. Start Instant On-Device OCR in parallel on phone CPU ──────────
@@ -259,7 +268,7 @@ export async function detectBatteryPercentage(
   // ── 4. Encode canvas → JPEG blob for backend ────────────────────────
   let blob: Blob;
   try {
-    blob = await canvasToJpegBlob(uploadCanvas, 0.75);
+    blob = await canvasToJpegBlob(uploadCanvas, 0.85);
   } catch {
     return fail('Could not encode photo for upload.');
   }
@@ -267,6 +276,7 @@ export async function detectBatteryPercentage(
   // ── 5. Build multipart form and POST to backend in parallel ─────────
   const form = new FormData();
   form.append('image', blob, 'battery.jpg');
+  form.append('mode', mode);
   if (cropX !== undefined) form.append('crop_x', String(cropX));
   if (cropY !== undefined) form.append('crop_y', String(cropY));
   if (cropW !== undefined) form.append('crop_w', String(cropW));
@@ -393,15 +403,17 @@ export async function recognizeBatteryFromCanvas(
     return { success: false, error: 'Empty frame canvas' };
   }
 
+  const uploadCanvas = limitCanvasLongSide(canvas, 1280);
   let blob: Blob;
   try {
-    blob = await canvasToJpegBlob(canvas, 0.85);
+    blob = await canvasToJpegBlob(uploadCanvas, 0.85);
   } catch {
     return { success: false, error: 'Frame encode failed' };
   }
 
   const form = new FormData();
   form.append('image', blob, 'frame.jpg');
+  form.append('mode', 'guide');
 
   try {
     const controller = new AbortController();

@@ -1,9 +1,11 @@
+import functools
 import os
 from zipfile import BadZipFile
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 from filelock import Timeout  # type: ignore
 from . import config
 from .schemas import Capture, Reading, Restart, Device
@@ -51,25 +53,32 @@ def create_app(path=config.FILE, interval=config.CHECKPOINT_SECONDS, hosts=None,
         crop_y: float | None = Form(default=None),
         crop_w: float | None = Form(default=None),
         crop_h: float | None = Form(default=None),
+        mode: str | None = Form(default=None),
     ):
         """OCR a battery percentage from an uploaded image.
 
         Accepts multipart/form-data with fields:
           image   – JPEG or PNG file (required)
           crop_x, crop_y, crop_w, crop_h – fractional crop coordinates (optional)
+          mode    – "guide" or "photo" (optional)
         """
         if image.content_type not in ('image/jpeg', 'image/png', 'image/webp'):
             raise HTTPException(415, 'Only JPEG, PNG or WebP images are accepted.')
         data = await image.read(8 * 1024 * 1024)  # 8 MB cap
         if len(data) > 8 * 1024 * 1024:
             raise HTTPException(413, 'Image exceeds 8 MB limit.')
-        result = run_battery_ocr(
+        # Fix 6: run_battery_ocr is CPU-bound (ONNX inference + OpenCV).
+        # Offload to the default thread-pool so we don't block the event loop.
+        fn = functools.partial(
+            run_battery_ocr,
             data,
             crop_x=crop_x,
             crop_y=crop_y,
             crop_w=crop_w,
             crop_h=crop_h,
+            mode=mode,
         )
+        result = await run_in_threadpool(fn)
         return result
 
     @app.get('/api/config')
