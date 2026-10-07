@@ -672,3 +672,273 @@
   line-height: 1.4;
 }
 
+/* ==========================================================================
+   Battery Macro Scanner & Zoom Controls Styles
+   ========================================================================== */
+.battery-scanner-container {
+  border: 2px solid #234b39;
+  position: relative;
+}
+
+.macro-badge {
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0.5px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  background: #eef3e8;
+  color: #385320;
+  border: 1px solid #c7d8be;
+  transition: all 0.2s ease-in-out;
+}
+
+.macro-badge.active {
+  background: #183e2f;
+  color: #86efac;
+  border-color: #22c55e;
+  box-shadow: 0 0 10px rgba(34, 197, 94, 0.35);
+}
+
+.scanner-icon-btn {
+  min-height: 36px;
+  padding: 6px 10px;
+  font-size: 16px;
+  background: #f0f5ec;
+  border: 1px solid #ccd9c3;
+  color: #183e2f;
+  border-radius: 6px;
+}
+
+.scanner-icon-btn.torch-on {
+  background: #fef08a;
+  border-color: #eab308;
+  box-shadow: 0 0 10px rgba(234, 179, 8, 0.4);
+}
+
+.scanner-close-btn {
+  min-height: 36px;
+  padding: 6px 12px;
+  font-size: 15px;
+  background: #f0f5ec;
+  border: 1px solid #ccd9c3;
+  color: #495e4a;
+  border-radius: 6px;
+}
+
+.battery-viewport {
+  position: relative;
+  cursor: crosshair;
+  user-select: none;
+  touch-action: none;
+}
+
+.viewport-zoom-pill {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  background: rgba(16, 38, 29, 0.85);
+  color: #86efac;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 3px 8px;
+  border-radius: 12px;
+  border: 1px solid rgba(134, 239, 172, 0.4);
+  backdrop-filter: blur(4px);
+  pointer-events: none;
+}
+
+.tap-focus-indicator {
+  position: absolute;
+  width: 48px;
+  height: 48px;
+  transform: translate(-50%, -50%);
+  border: 2px solid #86efac;
+  border-radius: 8px;
+  box-shadow: 0 0 12px rgba(134, 239, 172, 0.8);
+  pointer-events: none;
+  animation: focusPulse 0.8s ease-out forwards;
+}
+
+@keyframes focusPulse {
+  0% { transform: translate(-50%, -50%) scale(1.4); opacity: 1; }
+  50% { transform: translate(-50%, -50%) scale(0.95); opacity: 0.9; }
+  100% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
+}
+
+.battery-guide-crosshair {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 14px;
+  height: 14px;
+  transform: translate(-50%, -50%);
+  border-top: 1px solid rgba(134, 239, 172, 0.6);
+  border-left: 1px solid rgba(134, 239, 172, 0.6);
+  pointer-events: none;
+}
+
+/* Zoom controls panel */
+.zoom-controls-panel {
+  width: 100%;
+  max-width: 580px;
+  background: #f7f9f5;
+  border: 1px solid #dce5d8;
+  border-radius: 10px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.zoom-preset-chips {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+
+.zoom-chip {
+  min-height: 32px;
+  padding: 4px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  background: #ffffff;
+  color: #2b4632;
+  border: 1px solid #ccd9c4;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.zoom-chip:hover {
+  background: #edf4e7;
+}
+
+.zoom-chip.active {
+  background: #183e2f;
+  color: #ffffff;
+  border-color: #183e2f;
+  font-weight: 750;
+}
+
+.zoom-chip.active.macro-chip {
+  background: #183e2f;
+  color: #86efac;
+  border-color: #22c55e;
+  box-shadow: 0 0 8px rgba(34, 197, 94, 0.3);
+}
+
+.zoom-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.zoom-step-btn {
+  min-height: 34px;
+  width: 34px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  font-weight: 700;
+  background: #ffffff;
+  color: #183e2f;
+  border: 1px solid #c8d7c2;
+  border-radius: 50%;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.zoom-step-btn:hover:not(:disabled) {
+  background: #eef5e8;
+}
+
+.zoom-slider-track {
+  flex: 1;
+  display: flex;
+  align-items: center;
+}
+
+.zoom-range-input {
+  width: 100%;
+  height: 6px;
+  accent-color: #183e2f;
+  cursor: pointer;
+}
+
+.zoom-value-label {
+  min-width: 42px;
+  font-size: 14px;
+  font-weight: 750;
+  color: #183e2f;
+  text-align: right;
+}
+
+/* Shutter button container */
+.shutter-action-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.shutter-button {
+  width: 72px;
+  height: 72px;
+  min-height: 72px;
+  border-radius: 50%;
+  background: #183e2f;
+  border: 4px solid #ffffff;
+  box-shadow: 0 0 0 3px #183e2f, 0 6px 16px rgba(0, 0, 0, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  cursor: pointer;
+  transition: transform 0.1s ease, box-shadow 0.15s ease;
+}
+
+.shutter-button:hover:not(:disabled) {
+  transform: scale(1.04);
+  box-shadow: 0 0 0 4px #22c55e, 0 8px 20px rgba(34, 197, 94, 0.3);
+}
+
+.shutter-button:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
+.shutter-inner-circle {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: #276248;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid #86efac;
+}
+
+.shutter-icon {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.shutter-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: #2b4934;
+  letter-spacing: 0.3px;
+}
+
+.scanner-aux-actions {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 16px;
+  margin-top: 14px;
+  flex-wrap: wrap;
+}
+
+

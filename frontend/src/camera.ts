@@ -33,22 +33,189 @@ export function abortable<T>(promise:Promise<T>,signal:AbortSignal,timeout=0):Pr
 }
 // Serialize browser permission requests even when a component is cancelled.
 let cameraQueue:Promise<void>=Promise.resolve();
-export function openCamera(media:Pick<MediaDevices,'getUserMedia'>,signal:AbortSignal):Promise<MediaStream> {
-  const pending=cameraQueue.then(async()=>{
+
+export interface CameraOptions {
+  idealWidth?: number;
+  idealHeight?: number;
+  preferMacro?: boolean;
+}
+
+export function openCamera(
+  media: Pick<MediaDevices, 'getUserMedia'>,
+  signal: AbortSignal,
+  options?: CameraOptions
+): Promise<MediaStream> {
+  const pending = cameraQueue.then(async () => {
     signal.throwIfAborted();
-    let stream:MediaStream;
-    try {stream=await media.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}});}
-    catch(error){
+    let stream: MediaStream;
+    const width = options?.idealWidth || 1280;
+    const height = options?.idealHeight || 720;
+    try {
+      const videoConstraints: any = {
+        facingMode: { ideal: 'environment' },
+        width: { ideal: width },
+        height: { ideal: height },
+      };
+      if (options?.preferMacro) {
+        videoConstraints.focusMode = { ideal: 'macro' };
+        videoConstraints.advanced = [{ focusMode: 'macro' }];
+      }
+      stream = await media.getUserMedia({ audio: false, video: videoConstraints });
+    } catch (error) {
       signal.throwIfAborted();
-      if(errorName(error)!=='OverconstrainedError')throw error;
-      stream=await media.getUserMedia({audio:false,video:{facingMode:{ideal:'environment'}}});
+      if (errorName(error) !== 'OverconstrainedError') throw error;
+      stream = await media.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' } } });
     }
-    if(signal.aborted){stopStream(stream);signal.throwIfAborted();}
+    if (signal.aborted) {
+      stopStream(stream);
+      signal.throwIfAborted();
+    }
     return stream;
   });
-  cameraQueue=pending.then(()=>{},()=>{});
-  return abortable(pending,signal);
+  cameraQueue = pending.then(() => {}, () => {});
+  return abortable(pending, signal);
 }
+
+export interface CameraCapabilities {
+  hasZoom: boolean;
+  minZoom: number;
+  maxZoom: number;
+  stepZoom: number;
+  hasTorch: boolean;
+  hasMacro: boolean;
+  currentZoom: number;
+}
+
+export function getCameraCapabilities(track: MediaStreamTrack | null): CameraCapabilities {
+  if (!track || typeof (track as any).getCapabilities !== 'function') {
+    return {
+      hasZoom: false,
+      minZoom: 1,
+      maxZoom: 1,
+      stepZoom: 0.1,
+      hasTorch: false,
+      hasMacro: false,
+      currentZoom: 1,
+    };
+  }
+  try {
+    const caps = (track as any).getCapabilities() || {};
+    const settings = typeof (track as any).getSettings === 'function' ? (track as any).getSettings() : {};
+    const zoom = caps.zoom;
+    const focusModes = caps.focusMode || [];
+    return {
+      hasZoom: !!zoom && typeof zoom.max === 'number' && zoom.max > 1,
+      minZoom: zoom?.min ?? 1,
+      maxZoom: zoom?.max ?? 1,
+      stepZoom: zoom?.step ?? 0.1,
+      hasTorch: !!caps.torch,
+      hasMacro: Array.isArray(focusModes) && focusModes.includes('macro'),
+      currentZoom: settings.zoom ?? 1,
+    };
+  } catch {
+    return {
+      hasZoom: false,
+      minZoom: 1,
+      maxZoom: 1,
+      stepZoom: 0.1,
+      hasTorch: false,
+      hasMacro: false,
+      currentZoom: 1,
+    };
+  }
+}
+
+export async function applyCameraZoom(track: MediaStreamTrack | null, zoom: number): Promise<boolean> {
+  if (!track || typeof (track as any).applyConstraints !== 'function') return false;
+  try {
+    await (track as any).applyConstraints({
+      advanced: [{ zoom }] as any,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function applyMacroFocus(track: MediaStreamTrack | null): Promise<boolean> {
+  if (!track || typeof (track as any).applyConstraints !== 'function') return false;
+  try {
+    const caps = typeof (track as any).getCapabilities === 'function' ? (track as any).getCapabilities() : null;
+    const adv: Record<string, unknown> = {};
+    if (caps?.focusMode && Array.isArray(caps.focusMode)) {
+      if (caps.focusMode.includes('macro')) {
+        adv.focusMode = 'macro';
+      } else if (caps.focusMode.includes('continuous')) {
+        adv.focusMode = 'continuous';
+      }
+    }
+    if (caps?.focusDistance?.min !== undefined) {
+      adv.focusDistance = caps.focusDistance.min;
+    }
+    if (Object.keys(adv).length > 0) {
+      await (track as any).applyConstraints({ advanced: [adv] as any });
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+export async function applyTorch(track: MediaStreamTrack | null, on: boolean): Promise<boolean> {
+  if (!track || typeof (track as any).applyConstraints !== 'function') return false;
+  try {
+    await (track as any).applyConstraints({
+      advanced: [{ torch: on }] as any,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function captureFrameFromVideo(
+  video: HTMLVideoElement,
+  options?: {
+    digitalZoom?: number;
+    guideRect?: NormalizedRect;
+    maxDimension?: number;
+  }
+): HTMLCanvasElement {
+  const vw = video.videoWidth || 1280;
+  const vh = video.videoHeight || 720;
+  const digitalZoom = Math.max(1, options?.digitalZoom || 1);
+
+  let sx: number, sy: number, sw: number, sh: number;
+  if (options?.guideRect) {
+    sx = Math.max(0, Math.min(vw - 1, Math.floor(options.guideRect.x * vw)));
+    sy = Math.max(0, Math.min(vh - 1, Math.floor(options.guideRect.y * vh)));
+    sw = Math.max(1, Math.min(vw - sx, Math.ceil(options.guideRect.width * vw)));
+    sh = Math.max(1, Math.min(vh - sy, Math.ceil(options.guideRect.height * vh)));
+  } else {
+    sw = Math.max(1, Math.round(vw / digitalZoom));
+    sh = Math.max(1, Math.round(vh / digitalZoom));
+    sx = Math.max(0, Math.round((vw - sw) / 2));
+    sy = Math.max(0, Math.round((vh - sh) / 2));
+  }
+
+  const maxDim = options?.maxDimension || 1280;
+  const scale = Math.min(1, maxDim / Math.max(sw, sh));
+  const dw = Math.max(1, Math.round(sw * scale));
+  const dh = Math.max(1, Math.round(sh * scale));
+
+  const canvas = document.createElement('canvas');
+  canvas.width = dw;
+  canvas.height = dh;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  if (ctx) {
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, dw, dh);
+  }
+  return canvas;
+}
+
 export async function startPreview(video:HTMLVideoElement,stream:MediaStream,signal:AbortSignal) {
   signal.throwIfAborted();video.muted=true;video.playsInline=true;video.srcObject=stream;
   await abortable(video.play(),signal,12000);

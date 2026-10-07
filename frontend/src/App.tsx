@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, submit, ApiError } from './api';
 import { Scanner } from './Scanner';
+import { BatteryScanner } from './BatteryScanner';
 import { parseQRSerial } from './qr';
 import { detectBatteryPercentage, warmClientWorker } from './batteryOCR';
+import type { Photo } from './photo';
 import type { Action, Device, Reading, IssueCategory, PowerTestResult } from './types';
 
 const modules = [
@@ -70,6 +72,10 @@ export default function App() {
   const [postConfirmed, setPostConfirmed] = useState<Device | null>(null);
   const [postManual, setPostManual] = useState(false);
   const [postManualInput, setPostManualInput] = useState('');
+
+  // Dedicated Live Battery Macro Scanner modal states
+  const [batteryScannerOpen, setBatteryScannerOpen] = useState(false);
+  const [batteryScannerStage, setBatteryScannerStage] = useState<'reg' | 'cp' | 'post'>('reg');
 
   // Dedicated Stage 03 observation and long-press power test states
   const [postHasIssue, setPostHasIssue] = useState<'yes' | 'no' | null>(null);
@@ -330,15 +336,13 @@ export default function App() {
     setCpRemarks('');
   };
 
-  // Synchronous triggers to preserve browser user activation
+  // Open Live Battery Macro Scanner for each stage
   const triggerRegBatteryScan = () => {
     setRegBatteryError(null);
     setError('');
     setMessage('');
-    if (regBatteryInputRef.current) {
-      regBatteryInputRef.current.value = '';
-      regBatteryInputRef.current.click();
-    }
+    setBatteryScannerStage('reg');
+    setBatteryScannerOpen(true);
   };
 
   const triggerCpBatteryScan = (targetAction: Action) => {
@@ -346,37 +350,25 @@ export default function App() {
     setCpBatteryError(null);
     setError('');
     setMessage('');
-    if (cpBatteryInputRef.current) {
-      cpBatteryInputRef.current.value = '';
-      cpBatteryInputRef.current.click();
-    }
+    setBatteryScannerStage('cp');
+    setBatteryScannerOpen(true);
   };
 
   const triggerPostBatteryScan = () => {
     setPostBatteryError(null);
     setError('');
     setMessage('');
-    if (postBatteryInputRef.current) {
-      postBatteryInputRef.current.value = '';
-      postBatteryInputRef.current.click();
-    }
+    setBatteryScannerStage('post');
+    setBatteryScannerOpen(true);
   };
 
-  // Automatic OCR handler triggered immediately upon photo selection
-  const handleBatteryPhotoSelect = async (
-    e: React.ChangeEvent<HTMLInputElement>,
+  // Unified battery capture OCR processor (handles both Live BatteryScanner and file input)
+  const processBatteryCapture = async (
+    photo: Photo,
     stage: 'reg' | 'cp' | 'post',
     batteryAction: Action,
     targetSerial?: string
   ) => {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) {
-      // User cancelled camera; return without changing any data
-      return;
-    }
-
-    // Cancel obsolete OCR requests
     if (ocrAbortCtrlRef.current) {
       ocrAbortCtrlRef.current.abort();
     }
@@ -397,7 +389,7 @@ export default function App() {
     setMessage('');
 
     try {
-      const ocrPromise = detectBatteryPercentage(file, undefined, undefined, ctrl.signal);
+      const ocrPromise = detectBatteryPercentage(photo, undefined, undefined, ctrl.signal);
       const tokenPromise = api<{ capture_token: string }>(
         '/captures',
         { action: batteryAction, serial_number: targetSerial || undefined },
@@ -407,7 +399,7 @@ export default function App() {
       const [ocrResult, captureData] = await Promise.all([ocrPromise, tokenPromise]);
 
       if (ctrl.signal.aborted) {
-        return; // Ignore late/obsolete result
+        return;
       }
 
       if (!ocrResult.success || ocrResult.batteryPercent === undefined) {
@@ -479,12 +471,29 @@ export default function App() {
         setPostBatteryError(errMsg);
       }
     } finally {
-      if (!ctrl.signal.aborted) {
-        if (stage === 'reg') setRegBatteryProcessing(false);
-        else if (stage === 'cp') setCpBatteryProcessing(false);
-        else if (stage === 'post') setPostBatteryProcessing(false);
+      if (stage === 'reg') {
+        setRegBatteryProcessing(false);
+      } else if (stage === 'cp') {
+        setCpBatteryProcessing(false);
+      } else if (stage === 'post') {
+        setPostBatteryProcessing(false);
       }
     }
+  };
+
+  // Automatic OCR handler triggered upon file input selection (fallback)
+  const handleBatteryPhotoSelect = async (
+    e: React.ChangeEvent<HTMLInputElement>,
+    stage: 'reg' | 'cp' | 'post',
+    batteryAction: Action,
+    targetSerial?: string
+  ) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) {
+      return;
+    }
+    void processBatteryCapture(file, stage, batteryAction, targetSerial);
   };
 
   // Helper validation functions for observations
@@ -944,6 +953,25 @@ export default function App() {
                           <p style={{ color: '#748270', fontStyle: 'italic', margin: '10px 0' }}>
                             Scan the Serial QR code in Step 1 first to enable battery scanning.
                           </p>
+                        ) : batteryScannerOpen && batteryScannerStage === 'reg' ? (
+                          <BatteryScanner
+                            targetSerial={regSerial}
+                            stageTitle="1. Registration · Battery Macro Scan"
+                            onCapture={(canvas) => {
+                              setBatteryScannerOpen(false);
+                              void processBatteryCapture(canvas, 'reg', 'register');
+                            }}
+                            onCancel={() => setBatteryScannerOpen(false)}
+                            onManual={() => {
+                              setBatteryScannerOpen(false);
+                              setRegBatteryManual(true);
+                              setError('');
+                            }}
+                            onFileSelect={(file) => {
+                              setBatteryScannerOpen(false);
+                              void processBatteryCapture(file, 'reg', 'register');
+                            }}
+                          />
                         ) : regBatteryProcessing ? (
                           <div className="battery-processing-card">
                             <div className="battery-spinner" />
@@ -1164,6 +1192,25 @@ export default function App() {
                         setLookupScanningQR(false);
                       }}
                       onCancel={() => setLookupScanningQR(false)}
+                    />
+                  ) : batteryScannerOpen && batteryScannerStage === 'cp' ? (
+                    <BatteryScanner
+                      targetSerial={device?.serial_number}
+                      stageTitle={`Aging Checkpoint ${cpAction.toUpperCase()} · Battery Macro Scan`}
+                      onCapture={(canvas) => {
+                        setBatteryScannerOpen(false);
+                        void processBatteryCapture(canvas, 'cp', cpAction, device?.serial_number);
+                      }}
+                      onCancel={() => setBatteryScannerOpen(false)}
+                      onManual={() => {
+                        setBatteryScannerOpen(false);
+                        setCpBatteryManual(true);
+                        setError('');
+                      }}
+                      onFileSelect={(file) => {
+                        setBatteryScannerOpen(false);
+                        void processBatteryCapture(file, 'cp', cpAction, device?.serial_number);
+                      }}
                     />
                   ) : cpBatteryProcessing ? (
                     <div className="battery-processing-card" style={{ maxWidth: 480, margin: '20px auto' }}>
@@ -1906,6 +1953,25 @@ export default function App() {
                           <p style={{ color: '#748270', fontStyle: 'italic', margin: '10px 0' }}>
                             Scan the Serial QR code in Step 1 first to enable battery scanning.
                           </p>
+                        ) : batteryScannerOpen && batteryScannerStage === 'post' ? (
+                          <BatteryScanner
+                            targetSerial={postSerial}
+                            stageTitle="3. Post-Aging · Battery Macro Scan"
+                            onCapture={(canvas) => {
+                              setBatteryScannerOpen(false);
+                              void processBatteryCapture(canvas, 'post', 'post-aging', postSerial);
+                            }}
+                            onCancel={() => setBatteryScannerOpen(false)}
+                            onManual={() => {
+                              setBatteryScannerOpen(false);
+                              setPostBatteryManual(true);
+                              setError('');
+                            }}
+                            onFileSelect={(file) => {
+                              setBatteryScannerOpen(false);
+                              void processBatteryCapture(file, 'post', 'post-aging', postSerial);
+                            }}
+                          />
                         ) : postBatteryProcessing ? (
                           <div className="battery-processing-card">
                             <div className="battery-spinner" />
