@@ -18,6 +18,7 @@
 
 import { loadPhoto, mapGuide, cropPhoto, type Photo, type Rect } from './photo';
 import { newWorker } from './ocr';
+import { API_BASE } from './api';
 
 // ── Re-exported types so callers need not change their import surface ─────────
 
@@ -291,7 +292,7 @@ export async function detectBatteryPercentage(
     }
     const timer = setTimeout(() => controller.abort(), 20000);
     try {
-      const response = await fetch('/api/battery-ocr', {
+      const response = await fetch(`${API_BASE}/battery-ocr`, {
         method: 'POST',
         body: form,
         signal: controller.signal,
@@ -423,7 +424,7 @@ export async function recognizeBatteryFromCanvas(
       signal.addEventListener('abort', abortHandler, { once: true });
     }
     const timer = setTimeout(() => controller.abort(), 6000);
-    const res = await fetch('/api/battery-ocr', {
+    const res = await fetch(`${API_BASE}/battery-ocr`, {
       method: 'POST',
       body: form,
       signal: controller.signal,

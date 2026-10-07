@@ -119,6 +119,14 @@ def create_app(path=config.FILE, interval=config.CHECKPOINT_SECONDS, hosts=None,
             raise HTTPException(404, 'Unknown action.')
         return workflow.reading(action, reading, serial)
 
+    @app.post('/api/readings/{action}', response_model=Device)
+    def submit_reading(action: str, reading: Reading):
+        if action not in ['register', 'start-aging', 'post-aging', 'h1', 'h2', 'h3', 'h4']:
+            raise HTTPException(404, 'Unknown action.')
+        target = None if action == 'register' else reading.serial_number
+        return workflow.reading(action, reading, target)
+
+
     active_origins = origins or config.ALLOWED_ORIGINS
     if os.getenv('RENDER') or os.getenv('ENVIRONMENT') == 'production' or os.getenv('ENABLE_CORS'):
         app.add_middleware(

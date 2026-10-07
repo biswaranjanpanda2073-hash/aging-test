@@ -1,4 +1,4 @@
-﻿/**
+/**
  * api.ts  -  Firebase-backend edition
  *
  * All requests go to relative  /api/...  URLs which Firebase Hosting rewrites
@@ -15,20 +15,28 @@ export class ApiError extends Error {
   }
 }
 
-const BASE = '/api';
+export const API_BASE = (
+  (import.meta.env.VITE_API_URL as string | undefined) ||
+  (import.meta.env.PROD ? 'https://aging-test.onrender.com/api' : '/api')
+).replace(/\/+$/, '');
 
 async function _fetch<T>(
   path: string,
   options: RequestInit = {},
   signal?: AbortSignal,
 ): Promise<T> {
-  const url = BASE + path;
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  const url = `${API_BASE}${cleanPath}`;
   const res = await fetch(url, { ...options, signal });
   if (!res.ok) {
     let msg = `HTTP ${res.status}`;
     try {
       const body = await res.json();
-      if (body?.error) msg = body.error;
+      if (body?.error) {
+        msg = body.error;
+      } else if (body?.detail) {
+        msg = typeof body.detail === 'string' ? body.detail : JSON.stringify(body.detail);
+      }
     } catch { /* ignore */ }
     throw new ApiError(msg, res.status);
   }

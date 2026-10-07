@@ -266,3 +266,15 @@ def test_observation_validation_rules(client):
     # Invalid power test must be rejected (422)
     assert submit(client, 'h1', 90, power_test_result='Maybe').status_code == 422
 
+
+def test_readings_endpoint_direct(client):
+    ticket = client.post('/api/captures', json={'action': 'register', 'serial_number': None}).json()['capture_token']
+    res = client.post('/api/readings/register', json={
+        'serial_number': SERIAL,
+        'battery_percent': 100,
+        'device_timestamp': '12:44 PM',
+        'capture_token': ticket,
+    })
+    assert res.status_code == 200
+    assert res.json()['status'] == 'READY_FOR_AGING'
+
