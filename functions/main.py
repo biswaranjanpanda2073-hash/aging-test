@@ -438,6 +438,8 @@ def _do_checkpoint(n: int, dev: dict, r: dict) -> dict:
         aging_started = stamp
     elif dev["status"] != f"AGING_HOUR_{n}" or dev.get("next_checkpoint") != n:
         raise ValueError("Checkpoints must follow H1, H2, H3, H4 in order.")
+    if n == 1 and r.get("battery_percent") != 100:
+        raise ValueError("Strict Rule: Checkpoint H1 requires 100% battery charge. Charge to 100% before proceeding.")
     nd = dev.get("next_due")
     if nd and _now() < datetime.fromisoformat(nd):
         raise ValueError("This hourly checkpoint is not due yet.")

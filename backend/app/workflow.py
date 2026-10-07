@@ -189,6 +189,8 @@ class Workflow:
                         reject('Checkpoints must follow H1, H2, H3, H4 in order.')
                     if state.get('next_due') and now() < datetime.fromisoformat(state['next_due']):
                         reject('This hourly checkpoint is not due yet.')
+                    if n == 1 and reading.battery_percent != 100:
+                        reject('Strict Rule: Checkpoint H1 requires 100% battery charge. Charge device to 100% before proceeding.')
                     sheet.cell(row, 2 * n + 2, reading.battery_percent)
                     sheet.cell(row, 2 * n + 3, reading.device_timestamp)
                     if reading.has_issue is not None:

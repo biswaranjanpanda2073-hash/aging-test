@@ -271,6 +271,10 @@ export default function App() {
       setError('Post-aging packing battery must be at least 70%.');
       return;
     }
+    if (stage === 'cp' && cpAction === 'h1' && pct !== 100) {
+      setError('Strict Rule: Checkpoint H1 requires 100% battery before proceeding. Please charge the device to 100%.');
+      return;
+    }
     try {
       const capData = await api<{ capture_token: string }>('/captures', {
         action: stage === 'reg' ? 'register' : stage === 'post' ? 'post-aging' : cpAction,
@@ -428,6 +432,11 @@ export default function App() {
           setPostBattery(null);
           setPostBatteryError(errMsg);
         }
+        return;
+      }
+
+      if (stage === 'cp' && batteryAction === 'h1' && pct !== 100) {
+        setCpBatteryError(`Strict Rule: Checkpoint H1 requires 100% battery before proceeding. Detected battery is ${pct}%. Please charge device to 100% and retake photo.`);
         return;
       }
 
@@ -619,6 +628,10 @@ export default function App() {
 
   const confirmCheckpoint = () => perform(async () => {
     if (!reading || cpHasIssue === null || !isCpObservationValid) return;
+    if (action === 'h1' && reading.battery_percent !== 100) {
+      setError('Strict Rule: Checkpoint H1 requires 100% battery before proceeding. Please charge the device to 100%.');
+      return;
+    }
     const readingPayload: Reading = {
       ...reading,
       has_issue: cpHasIssue,
@@ -1302,6 +1315,31 @@ export default function App() {
                         </div>
                       </div>
 
+                      {/* Strict Rule Warning for H1 */}
+                      {action === 'h1' && reading.battery_percent !== 100 && (
+                        <div
+                          className="error"
+                          style={{
+                            marginTop: 16,
+                            padding: '14px 18px',
+                            display: 'flex',
+                            alignItems: 'flex-start',
+                            gap: 12,
+                            borderRadius: 8,
+                          }}
+                        >
+                          <span style={{ fontSize: 24, lineHeight: 1 }}>⛔</span>
+                          <div>
+                            <strong style={{ fontSize: 15, display: 'block', marginBottom: 4 }}>
+                              Strict Rule: H1 Requires 100% Battery
+                            </strong>
+                            <span style={{ fontSize: 14 }}>
+                              Detected battery level is <strong>{reading.battery_percent}%</strong>. The system strictly prohibits proceeding or completing checkpoint H1 until the device is charged to 100%. Please charge the device and rescan.
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Display previous checkpoints so operator can compare */}
                       {action.startsWith('h') && (
                         <div style={{ marginTop: 16, background: '#ffffff', border: '1px solid #dbe5d6', borderRadius: 8, padding: '12px 16px' }}>
@@ -1424,11 +1462,26 @@ export default function App() {
                       <div className="actions">
                         <button
                           type="button"
-                          style={{ flex: 2, minHeight: 52, fontSize: 16 }}
-                          disabled={busy || !connected || cpHasIssue === null || !isCpObservationValid}
+                          style={{
+                            flex: 2,
+                            minHeight: 52,
+                            fontSize: 16,
+                            background: (action === 'h1' && reading.battery_percent !== 100) ? '#8a2c26' : undefined,
+                          }}
+                          disabled={
+                            busy ||
+                            !connected ||
+                            cpHasIssue === null ||
+                            !isCpObservationValid ||
+                            (action === 'h1' && reading.battery_percent !== 100)
+                          }
                           onClick={() => void confirmCheckpoint()}
                         >
-                          {busy ? 'Saving to Excel…' : `✓ Confirm & Save ${action.toUpperCase()} to Excel`}
+                          {busy
+                            ? 'Saving to Excel…'
+                            : (action === 'h1' && reading.battery_percent !== 100)
+                            ? '⛔ H1 Requires 100% Battery to Complete'
+                            : `✓ Confirm & Save ${action.toUpperCase()} to Excel`}
                         </button>
                         <button
                           type="button"

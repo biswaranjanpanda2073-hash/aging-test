@@ -25,7 +25,7 @@ def complete(client):
     assert submit(client, 'register').status_code == 200
     assert submit(client, 'start-aging').status_code == 200
     for n in range(1, 5):
-        assert submit(client, f'h{n}', 90-n).status_code == 200
+        assert submit(client, f'h{n}', 100 if n == 1 else 90-n).status_code == 200
         assert client.post(f'/api/devices/{SERIAL}/restart', json={'checkpoint': n, 'confirmed': True}).status_code == 200
 
 def test_registration_and_duplicate(client):
@@ -138,8 +138,8 @@ def test_checkpoint_observations_and_power_test(tmp_path):
     assert submit(client, 'register').status_code == 200
     assert submit(client, 'start-aging').status_code == 200
 
-    # 2. Checkpoint H1: No issue, with optional remark
-    res_h1 = submit(client, 'h1', 89, has_issue='no', remarks='All normal at H1')
+    # 2. Checkpoint H1: No issue, with optional remark (requires 100% battery)
+    res_h1 = submit(client, 'h1', 100, has_issue='no', remarks='All normal at H1')
     assert res_h1.status_code == 200
     assert res_h1.json()['observations']['h1']['has_issue'] == 'no'
     assert client.post(f'/api/devices/{SERIAL}/restart', json={'checkpoint': 1, 'confirmed': True}).status_code == 200
@@ -277,4 +277,16 @@ def test_readings_endpoint_direct(client):
     })
     assert res.status_code == 200
     assert res.json()['status'] == 'READY_FOR_AGING'
+
+
+def test_h1_strict_100_percent_battery_rule(client):
+    assert submit(client, 'register', 85).status_code == 200
+    # Attempting H1 with less than 100% battery must be rejected (409)
+    assert submit(client, 'h1', 99).status_code == 409
+    assert submit(client, 'h1', 85).status_code == 409
+    assert submit(client, 'h1', 50).status_code == 409
+    # Attempting H1 with 100% battery must succeed (200)
+    res = submit(client, 'h1', 100)
+    assert res.status_code == 200
+    assert res.json()['last_battery'] == 100
 

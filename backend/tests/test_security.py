@@ -65,7 +65,7 @@ def test_missing_or_extra_capture_fields(client):
 def test_stale_ticket_after_other_operator_updates_state(client):
     submit(client,'register');submit(client,'start-aging')
     old=client.post('/api/captures',json={'action':'h2','serial_number':SERIAL}).json()['capture_token']
-    submit(client,'h1',90)
+    submit(client,'h1',100)
     client.post(f'/api/devices/{SERIAL}/restart',json={'checkpoint':1,'confirmed':True})
     response=client.post(f'/api/devices/{SERIAL}/aging/h2',json={'serial_number':SERIAL,'battery_percent':85,'capture_token':old})
     assert response.status_code==409
@@ -74,10 +74,10 @@ def test_stale_ticket_after_other_operator_updates_state(client):
 def test_concurrent_checkpoint_cannot_overwrite(client):
     submit(client,'register');submit(client,'start-aging')
     with ThreadPoolExecutor(max_workers=4) as pool:
-        results=list(pool.map(lambda _:submit(client,'h1',90).status_code,range(4)))
+        results=list(pool.map(lambda _:submit(client,'h1',100).status_code,range(4)))
     assert sorted(results)==[200,409,409,409]
     state=client.get(f'/api/devices/{SERIAL}').json()
-    assert state['pending_restart']==1 and state['values'][3]==90
+    assert state['pending_restart']==1 and state['values'][3]==100
 
 @pytest.mark.parametrize('confirmation',[False,1,'true',None])
 def test_restart_requires_real_boolean(client,confirmation):
