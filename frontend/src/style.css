@@ -728,6 +728,7 @@
 .battery-viewport {
   position: relative;
   cursor: crosshair;
+  -webkit-user-select: none;
   user-select: none;
   touch-action: none;
 }
@@ -743,6 +744,7 @@
   padding: 3px 8px;
   border-radius: 12px;
   border: 1px solid rgba(134, 239, 172, 0.4);
+  -webkit-backdrop-filter: blur(4px);
   backdrop-filter: blur(4px);
   pointer-events: none;
 }

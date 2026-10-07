@@ -186,7 +186,7 @@ def _prepare_crop(img):
     if scale != 1.0:
         img = cv2.resize(img, (max(1, round(w*scale)), max(1, round(h*scale))), interpolation=cv2.INTER_AREA)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    norm = cv2.normalize(gray, None, 0, 255, cv2.NORM_MINMAX)
+    norm = cv2.normalize(gray, np.zeros_like(gray), 0, 255, cv2.NORM_MINMAX)
     return [(img, "original"), (cv2.cvtColor(norm, cv2.COLOR_GRAY2BGR), "contrast")]
 
 
@@ -231,7 +231,7 @@ def _sort_boxes(txts, scores, boxes):
     return " ".join(out), float(max(sc)) if sc else 0.0
 
 
-def _run_ocr(image_bytes: bytes, crop_x=None, crop_y=None, crop_w=None, crop_h=None) -> dict:
+def _run_ocr(image_bytes: bytes, crop_x: float | None = None, crop_y: float | None = None, crop_w: float | None = None, crop_h: float | None = None) -> dict:
     import cv2, numpy as np
     if not _ocr_ready.wait(timeout=_OCR_WAIT):
         return {"success": False, "error": "OCR engine still initialising.", "battery_percent": None, "confidence": None, "raw_text": None, "method": None, "processing_time_ms": 0.0, "attempts": 0}
@@ -258,13 +258,21 @@ def _run_ocr(image_bytes: bytes, crop_x=None, crop_y=None, crop_w=None, crop_h=N
         img = cv2.resize(img, (int(fw*sc), int(fh*sc)), interpolation=cv2.INTER_AREA)
         fh, fw = img.shape[:2]
 
-    has_crop = all(v is not None for v in [crop_x, crop_y, crop_w, crop_h]) and crop_w > 0.005 and crop_h > 0.005
     candidates = []
-    if has_crop:
-        m=0.05
-        x0=max(0,int((crop_x-crop_w*m)*fw)); y0=max(0,int((crop_y-crop_h*m)*fh))
-        x1=min(fw,int((crop_x+crop_w*(1+m))*fw)); y1=min(fh,int((crop_y+crop_h*(1+m))*fh))
-        candidates.append((img[y0:y1,x0:x1], "operator-crop"))
+    if (
+        crop_x is not None
+        and crop_y is not None
+        and crop_w is not None
+        and crop_h is not None
+        and crop_w > 0.005
+        and crop_h > 0.005
+    ):
+        m = 0.05
+        x0 = max(0, int((crop_x - crop_w * m) * fw))
+        y0 = max(0, int((crop_y - crop_h * m) * fh))
+        x1 = min(fw, int((crop_x + crop_w * (1 + m)) * fw))
+        y1 = min(fh, int((crop_y + crop_h * (1 + m)) * fh))
+        candidates.append((img[y0:y1, x0:x1], "operator-crop"))
     elif fh <= 300 or fw/max(1,fh) >= 2.0:
         candidates.append((img, "live-crop"))
     else:
@@ -398,9 +406,13 @@ def _empty_doc(serial, battery, dt, stamp):
 
 def _do_register(r: dict) -> dict:
     serial = r["serial_number"]
-    if _get(serial): raise ValueError(f"Device already registered. Current status: {_get(serial)['status']}")
-    stamp = _stamp(); doc = _empty_doc(serial, r["battery_percent"], r["device_timestamp"], stamp)
-    _ref(serial).set(doc); return doc
+    existing = _get(serial)
+    if existing:
+        raise ValueError(f"Device already registered. Current status: {existing['status']}")
+    stamp = _stamp()
+    doc = _empty_doc(serial, r["battery_percent"], r["device_timestamp"], stamp)
+    _ref(serial).set(doc)
+    return doc
 
 
 def _do_start_aging(dev: dict, r: dict) -> dict:
