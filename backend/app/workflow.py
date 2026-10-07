@@ -5,6 +5,7 @@ from datetime import datetime, timezone, timedelta
 from fastapi import HTTPException
 from .config import CAPTURE_TTL, CHECKPOINT_SECONDS
 from .storage import Store, extract_observations_from_row, sanitize_formula_injection
+from .supabase_sync import sync_device_to_supabase, fetch_device_from_supabase, delete_device_from_supabase
 
 
 def now():
@@ -24,6 +25,71 @@ class Workflow:
     def revision(state):
         return hashlib.sha256(json.dumps(state, sort_keys=True).encode()).hexdigest()
 
+    def restore_from_supabase_row(self, book, sb_row):
+        serial = sb_row['serial_number']
+        sheet = book['Devices']
+        row_vals = [
+            serial,
+            sb_row.get('registration_time'),
+            sb_row.get('registration_battery'),
+            sb_row.get('h1_battery'),
+            sb_row.get('h1_timestamp'),
+            sb_row.get('h2_battery'),
+            sb_row.get('h2_timestamp'),
+            sb_row.get('h3_battery'),
+            sb_row.get('h3_timestamp'),
+            sb_row.get('h4_battery'),
+            sb_row.get('h4_timestamp'),
+            sb_row.get('post_aging_battery'),
+            sb_row.get('post_aging_timestamp'),
+            sb_row.get('status', 'WAITING_FOR_100_PERCENT_CHARGE'),
+        ] + [None] * 16
+        sheet.append(row_vals)
+        row = sheet.max_row
+
+        obs = sb_row.get('observations') or {}
+        for n in range(1, 5):
+            o = obs.get(f'h{n}')
+            if o and isinstance(o, dict):
+                sheet.cell(row, 15 + 3 * (n - 1), 'Yes' if o.get('has_issue') == 'yes' else 'No')
+                sheet.cell(row, 16 + 3 * (n - 1), ', '.join(o.get('categories', [])))
+                sheet.cell(row, 17 + 3 * (n - 1), sanitize_formula_injection(o.get('remarks', '')))
+        post_o = obs.get('post')
+        if post_o and isinstance(post_o, dict):
+            sheet.cell(row, 27, 'Yes' if post_o.get('has_issue') == 'yes' else 'No')
+            sheet.cell(row, 28, ', '.join(post_o.get('categories', [])))
+            sheet.cell(row, 29, sanitize_formula_injection(post_o.get('remarks', '')))
+        if sb_row.get('power_test_result'):
+            sheet.cell(row, 30, sb_row.get('power_test_result'))
+
+        state = {
+            'serial_number': serial,
+            'status': sb_row.get('status', 'WAITING_FOR_100_PERCENT_CHARGE'),
+            'pending_restart': sb_row.get('pending_restart'),
+            'next_checkpoint': sb_row.get('next_checkpoint', 1),
+            'aging_started': sb_row.get('aging_started'),
+            'next_due': sb_row.get('next_due'),
+            'events': sb_row.get('events', []),
+            'registration_device_time': sb_row.get('last_device_time'),
+            'last_device_time': sb_row.get('last_device_time'),
+            'last_battery': sb_row.get('last_battery'),
+            'last_server_received': sb_row.get('last_server_received'),
+            'observations': obs,
+            'power_test_result': sb_row.get('power_test_result'),
+        }
+        book['Workflow'].append([serial, json.dumps(state)])
+        meta = book['Workflow'].max_row
+        return row, meta, state
+
+    def find_device(self, book, serial):
+        found = Store.locate(book, serial)
+        if not found:
+            sb_row = fetch_device_from_supabase(serial)
+            if sb_row:
+                row, meta, state = self.restore_from_supabase_row(book, sb_row)
+                found = (row, meta, state)
+        return found
+
     def capture(self, request):
         def operation(book):
             sheet = book['Captures']
@@ -35,7 +101,7 @@ class Workflow:
                 raise HTTPException(429, 'Too many pending captures. Wait three minutes and retry.')
             revision = None
             if request.serial_number:
-                found = Store.locate(book, request.serial_number)
+                found = self.find_device(book, request.serial_number)
                 if not found:
                     raise HTTPException(404, 'Device not registered.')
                 revision = self.revision(found[2])
@@ -62,7 +128,7 @@ class Workflow:
 
     def get(self, serial):
         def operation(book):
-            found = Store.locate(book, serial)
+            found = self.find_device(book, serial)
             if not found:
                 raise HTTPException(404, 'Device not registered.')
             row, _, state = found
@@ -83,7 +149,7 @@ class Workflow:
             serial = reading.serial_number
             if target is not None and serial != target:
                 reject('Serial mismatch. Capture the selected device.')
-            found = Store.locate(book, serial)
+            found = self.find_device(book, serial)
             if action == 'register' and found:
                 reject('Device already registered. Current status: ' + found[2]['status'])
             if action != 'register' and not found:
@@ -174,12 +240,14 @@ class Workflow:
             if len(encoded) > 30000:
                 reject('Device event history is full. Ask a supervisor to archive this record.')
             book['Workflow'].cell(meta, 2, encoded)
-            return self.response(book, row, state)
+            resp = self.response(book, row, state)
+            sync_device_to_supabase(state, resp.get('values'))
+            return resp
         return self.store.transaction(operation)
 
     def restart(self, serial, request):
         def operation(book):
-            found = Store.locate(book, serial)
+            found = self.find_device(book, serial)
             if not found:
                 raise HTTPException(404, 'Device not registered.')
             row, meta, state = found
@@ -197,16 +265,19 @@ class Workflow:
             if len(encoded) > 30000:
                 reject('Device event history is full. Ask a supervisor to archive this record.')
             book['Workflow'].cell(meta, 2, encoded)
-            return self.response(book, row, state)
+            resp = self.response(book, row, state)
+            sync_device_to_supabase(state, resp.get('values'))
+            return resp
         return self.store.transaction(operation)
 
     def delete(self, serial: str):
         def operation(book):
-            found = Store.locate(book, serial)
+            found = self.find_device(book, serial)
             if not found:
                 raise HTTPException(404, 'Device not registered.')
             dev_row, meta_row, _ = found
             book['Devices'].delete_rows(dev_row)
             Store.reconcile(book)
+            delete_device_from_supabase(serial)
             return {'status': 'deleted', 'serial_number': serial}
         return self.store.transaction(operation)

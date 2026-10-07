@@ -34,3 +34,24 @@ else:
 
 if not 30 <= CAPTURE_TTL <= 600 or not 0 <= CHECKPOINT_SECONDS <= 86400:
     raise ValueError('Capture TTL must be 30–600 seconds and checkpoint interval 0–86400 seconds.')
+
+# Supabase database synchronization
+SUPABASE_URL = os.getenv('SUPABASE_URL', 'https://nufzfmkplcspwhwnarbc.supabase.co')
+SUPABASE_KEY = os.getenv(
+    'SUPABASE_KEY',
+    os.getenv(
+        'SUPABASE_SERVICE_ROLE_KEY',
+        os.getenv(
+            'SUPABASE_ANON_KEY',
+            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im51ZnpmbWtwbGNzcHdod25hcmJjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA4NDU1OTIsImV4cCI6MjEwNjQyMTU5Mn0.3gZJWDJwGy7QVirYaiW_erpXlsx2TohKrqRieLqT9c8'
+        )
+    )
+)
+import sys
+
+def is_supabase_enabled() -> bool:
+    if 'pytest' in sys.modules or os.getenv('ENVIRONMENT') == 'test' or os.getenv('PYTEST_CURRENT_TEST'):
+        return False
+    return os.getenv('SUPABASE_SYNC_ENABLED', 'true').lower() in ('true', '1', 'yes')
+
+SUPABASE_SYNC_ENABLED = is_supabase_enabled()
