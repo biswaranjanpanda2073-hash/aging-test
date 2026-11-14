@@ -288,7 +288,7 @@ class Workflow:
         """Iterates through all devices in the Excel workbook and synchronizes them to the database."""
         def operation(book):
             sheet = book['Devices']
-            wf_sheet = book.get('Workflow') if 'Workflow' in book.sheetnames else None
+            wf_sheet = book['Workflow'] if 'Workflow' in book.sheetnames else None
 
             wf_states = {}
             if wf_sheet:

@@ -141,7 +141,10 @@ def create_app(path=config.FILE, interval=config.CHECKPOINT_SECONDS, hosts=None,
     @app.post('/api/admin/resync-to-db')
     def resync_to_db():
         """Resync all devices stored in Excel into Neon PostgreSQL / Supabase."""
-        return workflow.resync_all_to_db()
+        try:
+            return workflow.resync_all_to_db()
+        except Exception as e:
+            return JSONResponse({'status': 'error', 'detail': str(e)}, 500)
 
     @app.post('/api/readings/bulk')
     def bulk_submit_readings(items: list[dict]):
