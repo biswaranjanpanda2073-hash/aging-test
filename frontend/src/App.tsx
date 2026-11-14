@@ -1,9 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, submit, ApiError } from './api';
+import { api, ApiError } from './api';
 import { Scanner } from './Scanner';
 import { BatteryScanner } from './BatteryScanner';
 import { parseQRSerial } from './qr';
 import { detectBatteryPercentage, warmClientWorker } from './batteryOCR';
+import { UpdatePrompt } from './UpdatePrompt';
+import { SyncStatusBar } from './SyncStatusBar';
+import { initSyncManager } from './syncManager';
+import { submitLocalFirst, lookupDeviceWithOfflineFallback } from './offlineService';
 import type { Photo } from './photo';
 import type { Action, Device, Reading, IssueCategory, PowerTestResult } from './types';
 
@@ -98,7 +102,11 @@ export default function App() {
     const timer = setInterval(() => setCurrentTime(Date.now()), 1000);
     // Pre-warm client Tesseract WebAssembly worker in the background for instant scans
     void warmClientWorker();
-    return () => clearInterval(timer);
+    const cleanupSync = initSyncManager();
+    return () => {
+      clearInterval(timer);
+      cleanupSync?.();
+    };
   }, []);
 
   useEffect(() => {
@@ -532,7 +540,7 @@ export default function App() {
     postHasIssue === 'no' ||
     (postHasIssue === 'yes' && (postCategories.display || postCategories.crashing || postCategories.other));
 
-  // Step 01: Confirm & Register in Excel
+  // Step 01: Confirm & Register in Excel (Local-First IndexedDB + Neon Sync)
   const confirmRegistration = () => perform(async () => {
     if (!regSerial || regBattery === null || !regToken) return;
     const readingPayload: Reading = {
@@ -541,12 +549,16 @@ export default function App() {
       device_timestamp: null,
       capture_token: regToken
     };
-    const next = await submit('register', readingPayload);
+    const { device: next, isOffline } = await submitLocalFirst('register', readingPayload);
     setRegRegistered(next);
-    setMessage('Device registered successfully in Excel.');
+    setMessage(
+      isOffline
+        ? '✓ Device saved locally in IndexedDB (Queued for background sync).'
+        : '✓ Device registered and synchronized successfully.'
+    );
   });
 
-  // Step 03: Confirm & Save Post-Aging Packing in Excel
+  // Step 03: Confirm & Save Post-Aging Packing in Excel (Local-First)
   const confirmPostAging = () => perform(async () => {
     if (
       !postSerial ||
@@ -568,17 +580,21 @@ export default function App() {
       remarks: postRemarks.trim() || null,
       power_test_result: postPowerTest,
     };
-    const next = await submit('post-aging', readingPayload, postSerial);
+    const { device: next, isOffline } = await submitLocalFirst('post-aging', readingPayload, postSerial, device);
     setPostConfirmed(next);
-    setMessage('Device successfully saved to Excel and marked Packing Ready.');
+    setMessage(
+      isOffline
+        ? '✓ Device saved locally in IndexedDB (Queued for background sync) and marked Packing Ready.'
+        : '✓ Device successfully saved to Excel & database and marked Packing Ready.'
+    );
   });
 
-  // Steps 02 & 03: Lookup logic
+  // Steps 02 & 03: Lookup logic (Online with Local IndexedDB Fallback)
   const findBySerial = async (s: string) => perform(async () => {
-    const next = await api<Device>(`/devices/${encodeURIComponent(s.trim())}`);
+    const { device: next, isCached } = await lookupDeviceWithOfflineFallback(s.trim());
     setDevice(next);
     setSerial(s.trim());
-    setMessage('');
+    setMessage(isCached ? 'Loaded device from offline local storage.' : '');
     setLookupPhase('scan');
   });
 
@@ -638,9 +654,9 @@ export default function App() {
       issue_categories: getCpCategoryList(),
       remarks: cpRemarks.trim() || null,
     };
-    const next = await submit(action, readingPayload, device?.serial_number);
+    const { device: next, isOffline } = await submitLocalFirst(action, readingPayload, device?.serial_number, device);
     let updatedDevice = next;
-    if (next.pending_restart) {
+    if (next.pending_restart && !isOffline) {
       try {
         updatedDevice = await api<Device>(`/devices/${encodeURIComponent(next.serial_number)}/restart`, {
           checkpoint: next.pending_restart,
@@ -656,7 +672,11 @@ export default function App() {
     setCpHasIssue(null);
     setCpCategories({ display: false, crashing: false, other: false });
     setCpRemarks('');
-    setMessage(`✓ Reading for ${action.toUpperCase()} (${reading.battery_percent}%) stored in Excel successfully.`);
+    setMessage(
+      isOffline
+        ? `✓ Reading for ${action.toUpperCase()} (${reading.battery_percent}%) saved locally in IndexedDB (Queued for sync).`
+        : `✓ Reading for ${action.toUpperCase()} (${reading.battery_percent}%) stored in Excel & synced successfully.`
+    );
   });
 
   const deleteDeviceRecord = () => perform(async () => {
@@ -674,14 +694,18 @@ export default function App() {
 
   return (
     <div className="app">
+      <UpdatePrompt />
       <header>
         <a href="#" onClick={(e) => { e.preventDefault(); navigate(null); }} className="brand">
           <span className="brand-mark">t.</span>tohands
           <span className="division">PRODUCTION</span>
         </a>
-        <span className={'connection ' + (connected ? 'online' : 'offline')}>
-          {connected ? 'Server connected' : 'Server not connected'}
-        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <SyncStatusBar />
+          <span className={'connection ' + (connected ? 'online' : 'offline')}>
+            {connected ? 'Server connected' : 'Server not connected'}
+          </span>
+        </div>
       </header>
 
       <main>

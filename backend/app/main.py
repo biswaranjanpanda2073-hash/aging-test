@@ -4,7 +4,7 @@ from zipfile import BadZipFile
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from starlette.concurrency import run_in_threadpool
 from filelock import Timeout  # type: ignore
 from . import config
@@ -125,6 +125,42 @@ def create_app(path=config.FILE, interval=config.CHECKPOINT_SECONDS, hosts=None,
             raise HTTPException(404, 'Unknown action.')
         target = None if action == 'register' else reading.serial_number
         return workflow.reading(action, reading, target)
+
+    @app.get('/api/admin/export-excel')
+    def export_excel():
+        """Export the current live Excel workbook containing all collected aging test records."""
+        if not path.exists():
+            raise HTTPException(404, 'Workbook does not exist yet.')
+        return FileResponse(
+            str(path),
+            media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            filename='aging_test_backup.xlsx'
+        )
+
+    @app.get('/api/admin/resync-to-db')
+    @app.post('/api/admin/resync-to-db')
+    def resync_to_db():
+        """Resync all devices stored in Excel into Neon PostgreSQL / Supabase."""
+        return workflow.resync_all_to_db()
+
+    @app.post('/api/readings/bulk')
+    def bulk_submit_readings(items: list[dict]):
+        """Batch ingestion for offline-queued readings from operators."""
+        results = []
+        errors = []
+        for item in items:
+            action = item.get('action')
+            reading_data = item.get('reading')
+            target = item.get('target')
+            if not action or not reading_data:
+                continue
+            try:
+                reading_obj = Reading(**reading_data)
+                dev = workflow.reading(action, reading_obj, target)
+                results.append({'serial_number': dev.serial_number, 'status': 'synced'})
+            except Exception as e:
+                errors.append({'serial_number': reading_data.get('serial_number'), 'error': str(e)})
+        return {'processed': len(results), 'errors': errors, 'results': results}
 
 
     active_origins = origins or config.ALLOWED_ORIGINS

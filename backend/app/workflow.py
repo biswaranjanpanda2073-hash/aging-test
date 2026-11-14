@@ -283,3 +283,56 @@ class Workflow:
             delete_device_from_supabase(serial)
             return {'status': 'deleted', 'serial_number': serial}
         return self.store.transaction(operation)
+
+    def resync_all_to_db(self):
+        """Iterates through all devices in the Excel workbook and synchronizes them to the database."""
+        def operation(book):
+            sheet = book['Devices']
+            wf_sheet = book.get('Workflow') if 'Workflow' in book.sheetnames else None
+
+            wf_states = {}
+            if wf_sheet:
+                for r in range(2, wf_sheet.max_row + 1):
+                    s = wf_sheet.cell(r, 1).value
+                    payload = wf_sheet.cell(r, 2).value
+                    if s and payload:
+                        try:
+                            wf_states[str(s).strip()] = json.loads(payload)
+                        except Exception:
+                            pass
+
+            synced_count = 0
+            devices_list = []
+            for r in range(2, sheet.max_row + 1):
+                serial_val = sheet.cell(r, 1).value
+                if not serial_val:
+                    continue
+                serial = str(serial_val).strip()
+                state = wf_states.get(serial)
+                values = [sheet.cell(r, c).value for c in range(1, 15)]
+                obs, power_test = extract_observations_from_row(sheet, r)
+
+                if not state:
+                    state = {
+                        'serial_number': serial,
+                        'status': values[13] or 'WAITING_FOR_100_PERCENT_CHARGE',
+                        'last_server_received': values[1],
+                        'last_battery': values[2] or 0,
+                        'observations': obs,
+                        'power_test_result': power_test,
+                        'events': []
+                    }
+                else:
+                    state['observations'] = obs
+                    state['power_test_result'] = power_test
+
+                if sync_device_to_supabase(state, values):
+                    synced_count += 1
+                devices_list.append(serial)
+
+            return {
+                'total_in_excel': len(devices_list),
+                'synced_to_db': synced_count,
+                'serials': devices_list
+            }
+        return self.store.transaction(operation, write=False)

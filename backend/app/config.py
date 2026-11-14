@@ -35,7 +35,10 @@ else:
 if not 30 <= CAPTURE_TTL <= 600 or not 0 <= CHECKPOINT_SECONDS <= 86400:
     raise ValueError('Capture TTL must be 30–600 seconds and checkpoint interval 0–86400 seconds.')
 
-# Supabase database synchronization
+# Database synchronization (Neon PostgreSQL & Supabase fallback)
+DATABASE_URL = os.getenv('DATABASE_URL', os.getenv('NEON_DATABASE_URL', ''))
+NEON_API_KEY = os.getenv('NEON_API_KEY', '')
+
 SUPABASE_URL = os.getenv('SUPABASE_URL', 'https://nufzfmkplcspwhwnarbc.supabase.co')
 SUPABASE_KEY = os.getenv(
     'SUPABASE_KEY',
@@ -49,9 +52,13 @@ SUPABASE_KEY = os.getenv(
 )
 import sys
 
-def is_supabase_enabled() -> bool:
+def is_db_enabled() -> bool:
     if 'pytest' in sys.modules or os.getenv('ENVIRONMENT') == 'test' or os.getenv('PYTEST_CURRENT_TEST'):
         return False
-    return os.getenv('SUPABASE_SYNC_ENABLED', 'true').lower() in ('true', '1', 'yes')
+    return os.getenv('DB_SYNC_ENABLED', os.getenv('SUPABASE_SYNC_ENABLED', 'true')).lower() in ('true', '1', 'yes')
+
+def is_supabase_enabled() -> bool:
+    return is_db_enabled()
 
 SUPABASE_SYNC_ENABLED = is_supabase_enabled()
+DB_SYNC_ENABLED = is_db_enabled()
