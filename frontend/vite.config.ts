@@ -2,15 +2,17 @@ import { defineConfig, loadEnv } from 'vite';
 import fs from 'node:fs';
 import path from 'node:path';
 
+const BUILD_TIME = Date.now();
+const BUILD_ID = `v1.3.1_${BUILD_TIME}`;
+
 function versionPlugin() {
   return {
     name: 'generate-version-json',
     buildStart() {
-      const buildTime = Date.now();
       const versionData = {
-        version: '1.3.0',
-        buildTime,
-        buildId: `v1.3.0_${buildTime}`,
+        version: '1.3.1',
+        buildTime: BUILD_TIME,
+        buildId: BUILD_ID,
       };
       const publicDir = path.resolve(process.cwd(), 'public');
       if (fs.existsSync(publicDir)) {
@@ -20,11 +22,10 @@ function versionPlugin() {
     closeBundle() {
       const distDir = path.resolve(process.cwd(), 'dist');
       if (fs.existsSync(distDir)) {
-        const buildTime = Date.now();
         const versionData = {
-          version: '1.3.0',
-          buildTime,
-          buildId: `v1.3.0_${buildTime}`,
+          version: '1.3.1',
+          buildTime: BUILD_TIME,
+          buildId: BUILD_ID,
         };
         fs.writeFileSync(path.join(distDir, 'version.json'), JSON.stringify(versionData, null, 2));
       }
@@ -41,13 +42,12 @@ export default defineConfig(({mode, command}) => {
     console.warn('Note: HTTPS certificates not found. Run scripts/setup-https.ps1 for LAN testing.');
   }
 
-  const buildTime = Date.now();
-
   return {
     plugins: [versionPlugin()],
     define: {
-      __APP_BUILD_TIME__: JSON.stringify(buildTime),
-      __APP_VERSION__: JSON.stringify('1.3.0'),
+      __APP_BUILD_TIME__: JSON.stringify(BUILD_TIME),
+      __APP_BUILD_ID__: JSON.stringify(BUILD_ID),
+      __APP_VERSION__: JSON.stringify('1.3.1'),
     },
     server: {
       host: '0.0.0.0',

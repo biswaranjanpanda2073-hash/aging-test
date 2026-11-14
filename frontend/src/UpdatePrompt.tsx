@@ -10,9 +10,11 @@ export function UpdatePrompt() {
   const [hasUpdate, setHasUpdate] = useState(false);
   const [dismissed, setDismissed] = useState(false);
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
+  const [newBuildId, setNewBuildId] = useState<string | null>(null);
 
   useEffect(() => {
-    // Current runtime build timestamp
+    // Current runtime build identifiers injected by Vite define
+    const currentBuildId = typeof __APP_BUILD_ID__ !== 'undefined' ? __APP_BUILD_ID__ : null;
     const currentBuildTime = typeof __APP_BUILD_TIME__ !== 'undefined' ? __APP_BUILD_TIME__ : null;
 
     async function checkVersion() {
@@ -26,11 +28,22 @@ export function UpdatePrompt() {
         if (!res.ok) return;
         const data = (await res.json()) as VersionInfo;
 
-        if (data && data.buildTime) {
-          // If server build time is newer than current running app build time
-          if (currentBuildTime && data.buildTime > currentBuildTime + 1000) {
-            setHasUpdate(true);
-            setLatestVersion(data.version);
+        if (data && data.buildId) {
+          // If current build ID is available, compare buildId directly
+          if (currentBuildId && data.buildId !== currentBuildId) {
+            // Check if user already dismissed this specific build
+            const alreadyDismissed = sessionStorage.getItem('dismissed_build_' + data.buildId);
+            if (!alreadyDismissed) {
+              setHasUpdate(true);
+              setLatestVersion(data.version);
+              setNewBuildId(data.buildId);
+            }
+          } else if (!currentBuildId && currentBuildTime && data.buildTime) {
+            // Fallback for legacy builds without buildId: must be at least 60 seconds newer
+            if (data.buildTime > currentBuildTime + 60000) {
+              setHasUpdate(true);
+              setLatestVersion(data.version);
+            }
           }
         }
       } catch {
@@ -67,19 +80,31 @@ export function UpdatePrompt() {
   }, []);
 
   const handleRefresh = async () => {
-    // Clear service worker caches if present
-    if ('serviceWorker' in navigator) {
-      try {
+    // Unregister service workers and clear caches to ensure the phone fetches latest assets
+    try {
+      if ('caches' in window) {
+        const cacheNames = await caches.keys();
+        await Promise.all(cacheNames.map((name) => caches.delete(name)));
+      }
+      if ('serviceWorker' in navigator) {
         const registrations = await navigator.serviceWorker.getRegistrations();
         for (const reg of registrations) {
-          await reg.update();
+          await reg.unregister();
         }
-      } catch {
-        /* ignore */
       }
+    } catch {
+      /* ignore cache clearing errors */
     }
-    // Hard reload
-    window.location.reload();
+
+    // Hard reload with query param to bypass phone browser cache
+    window.location.replace(window.location.origin + window.location.pathname + '?_t=' + Date.now());
+  };
+
+  const handleDismiss = () => {
+    if (newBuildId) {
+      sessionStorage.setItem('dismissed_build_' + newBuildId, 'true');
+    }
+    setDismissed(true);
   };
 
   if (!hasUpdate || dismissed) {
@@ -134,7 +159,7 @@ export function UpdatePrompt() {
         Refresh Now
       </button>
       <button
-        onClick={() => setDismissed(true)}
+        onClick={handleDismiss}
         type="button"
         title="Dismiss"
         style={{
