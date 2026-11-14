@@ -22,7 +22,7 @@ const label = (value: string) => value.replaceAll('_', ' ').replaceAll('-', ' ')
 export default function App() {
   const [page, setPage] = useState<number | null>(null);
   const [connected, setConnected] = useState(false);
-  const [regex, setRegex] = useState('');
+  const [regex, setRegex] = useState('^T[0-9]{3}R[0-9][A-Z]{3}[0-9]{5}$');
   const [device, setDevice] = useState<Device | null>(null);
   const [reading, setReading] = useState<Reading | null>(null);
   const [action, setAction] = useState<Action>('register');
@@ -802,9 +802,26 @@ export default function App() {
             </nav>
 
             {!connected && (
-              <p className="error" role="status">
-                Connect to the laptop server before capturing or saving a reading.
-              </p>
+              <div
+                style={{
+                  background: 'rgba(245, 158, 11, 0.12)',
+                  color: '#92400e',
+                  border: '1px solid rgba(245, 158, 11, 0.3)',
+                  borderRadius: '8px',
+                  padding: '10px 14px',
+                  margin: '10px 0 16px',
+                  fontSize: '13px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '10px',
+                  lineHeight: 1.4,
+                }}
+              >
+                <span style={{ fontSize: '18px' }}>📶</span>
+                <span>
+                  <strong>Offline Mode:</strong> Server is currently unreachable. You can continue capturing QR codes and battery readings; they will be safely stored in IndexedDB and automatically pushed to the server once reconnected.
+                </span>
+              </div>
             )}
             {error && <p className="error" role="alert">{error}</p>}
             {message && <p className="success" role="status">{message}</p>}
@@ -930,7 +947,7 @@ export default function App() {
                                 <button
                                   type="button"
                                   className="scan-btn-primary"
-                                  disabled={busy || !connected}
+                                  disabled={busy}
                                   onClick={() => {
                                     setError('');
                                     setRegScanningQR(true);
@@ -1073,7 +1090,7 @@ export default function App() {
                             <button
                               type="button"
                               className="scan-btn-primary"
-                              disabled={busy || !connected}
+                              disabled={busy}
                               onClick={triggerRegBatteryScan}
                             >
                               ⚡ Battery Scan
@@ -1129,7 +1146,7 @@ export default function App() {
                             <button
                               type="button"
                               style={{ minHeight: 52, fontSize: 16, flex: 2 }}
-                              disabled={busy || !connected}
+                              disabled={busy}
                               onClick={() => void confirmRegistration()}
                             >
                               {busy ? 'Saving to Excel…' : '✓ Confirm & Register Device'}
@@ -1494,7 +1511,6 @@ export default function App() {
                           }}
                           disabled={
                             busy ||
-                            !connected ||
                             cpHasIssue === null ||
                             !isCpObservationValid ||
                             (action === 'h1' && reading.battery_percent !== 100)
@@ -1544,7 +1560,7 @@ export default function App() {
                               <p>Open the live camera scanner to detect the device QR code or barcode.</p>
                               <button
                                 type="button"
-                                disabled={busy || !connected || !regex}
+                                disabled={busy || !regex}
                                 onClick={() => {
                                   setError('');
                                   setLookupScanningQR(true);
@@ -1584,7 +1600,7 @@ export default function App() {
                                   required
                                   autoCapitalize="characters"
                                 />
-                                <button type="submit" disabled={busy || !connected}>Find Device</button>
+                                <button type="submit" disabled={busy}>Find Device</button>
                               </div>
                               <button
                                 type="button"
@@ -1790,7 +1806,7 @@ export default function App() {
                                     <button
                                       type="button"
                                       className="stage2-cp-btn"
-                                      disabled={!isDue || busy || !connected}
+                                      disabled={!isDue || busy}
                                       onClick={() => triggerCpBatteryScan(`h${n}` as Action)}
                                     >
                                       {isDue ? `⚡ Scan H${n} Battery` : `⏳ Due in ${formatRemaining(remMs)}`}
@@ -1970,7 +1986,7 @@ export default function App() {
                                 <button
                                   type="button"
                                   className="scan-btn-primary"
-                                  disabled={busy || !connected}
+                                  disabled={busy}
                                   onClick={() => {
                                     setError('');
                                     setPostScanningQR(true);
@@ -2113,7 +2129,7 @@ export default function App() {
                             <button
                               type="button"
                               className="scan-btn-primary"
-                              disabled={busy || !connected}
+                              disabled={busy}
                               onClick={triggerPostBatteryScan}
                             >
                               ⚡ Battery Scan (Packing)
@@ -2302,7 +2318,7 @@ export default function App() {
                             <button
                               type="button"
                               style={{ minHeight: 52, fontSize: 16, flex: 2 }}
-                              disabled={busy || !connected || postBattery < 70 || postHasIssue === null || !isPostObservationValid || postPowerTest === null}
+                              disabled={busy || postBattery < 70 || postHasIssue === null || !isPostObservationValid || postPowerTest === null}
                               onClick={() => void confirmPostAging()}
                             >
                               {busy ? 'Saving to Excel…' : '✓ Confirm & Save to Excel'}
